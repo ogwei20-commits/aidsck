@@ -182,7 +182,7 @@ describe("执行记录读取", () => {
   });
 
   it("统计按全部记录算，且只算自己的", async () => {
-    const { stats } = await listRunCenter(uid);
+    const { stats } = await listRunCenter(uid, { pageSize: 100 });
     // 库里已有历史记录，所以断言「至少」而不是精确值——但这次插入的三条必须都在
     expect(stats.total).toBeGreaterThanOrEqual(3);
     expect(stats.failed).toBeGreaterThanOrEqual(1);
@@ -193,7 +193,7 @@ describe("执行记录读取", () => {
   }, 30_000);
 
   it("同一任务下两次执行，编号是 1 和 2；列表按时间倒序", async () => {
-    const { runs } = await listRunCenter(uid);
+    const { runs } = await listRunCenter(uid, { pageSize: 100 });
     const mine = runs.filter((r) => createdRunIds.includes(r.id));
     expect(mine).toHaveLength(3);
 
@@ -214,7 +214,7 @@ describe("执行记录读取", () => {
   }, 30_000);
 
   it("产出长度与预览都取自 assistant 消息，失败记录不计产出", async () => {
-    const { runs } = await listRunCenter(uid);
+    const { runs } = await listRunCenter(uid, { pageSize: 100 });
     const mine = runs.filter((r) => createdRunIds.includes(r.id));
 
     const long = mine.find((r) => r.outputChars === LONG_OUTPUT.length);
@@ -230,7 +230,7 @@ describe("执行记录读取", () => {
   }, 30_000);
 
   it("耗时按毫秒算，不四舍五入成 0", async () => {
-    const { runs } = await listRunCenter(uid);
+    const { runs } = await listRunCenter(uid, { pageSize: 100 });
     const mine = runs.filter((r) => createdRunIds.includes(r.id));
     const fast = mine.find((r) => r.outputChars === LONG_OUTPUT.length);
     // 240ms 必须原样读出来，不能变成 0（那会让人以为「没花时间」）
@@ -238,7 +238,7 @@ describe("执行记录读取", () => {
   }, 30_000);
 
   it("详情带回输入与产出全文", async () => {
-    const { runs } = await listRunCenter(uid);
+    const { runs } = await listRunCenter(uid, { pageSize: 100 });
     const target = runs.find((r) => createdRunIds.includes(r.id) && r.mode === "mock");
     const detail = await getRunDetail(uid, target!.id);
 
@@ -269,5 +269,77 @@ describe("执行记录读取", () => {
       code: "RUN_NOT_FOUND",
       status: 404,
     });
+  }, 30_000);
+
+  /* ── 筛选与分页（服务端） ───────────────────────────────── */
+
+  it("按状态筛选：只看失败时不会混进成功记录", async () => {
+    const center = await listRunCenter(uid, { status: "failed", pageSize: 100 });
+    expect(center.runs.length).toBeGreaterThanOrEqual(1);
+    expect(center.runs.every((r) => r.status === "failed")).toBe(true);
+    expect(center.query.status).toBe("failed");
+    // 统计仍是全量，不随筛选变小——否则页头「共 N 次执行」会骗人
+    expect(center.stats.total).toBeGreaterThanOrEqual(center.filteredTotal);
+  }, 30_000);
+
+  it("按产出方式筛选：框架模板只含成功的 provider=none", async () => {
+    const center = await listRunCenter(uid, { mode: "framework", pageSize: 100 });
+    expect(center.runs.every((r) => r.mode === "framework" && r.status === "succeeded")).toBe(true);
+    expect(center.runs.some((r) => createdRunIds.includes(r.id))).toBe(true);
+  }, 30_000);
+
+  it("按任务标题搜索命中对应记录", async () => {
+    const center = await listRunCenter(uid, { q: "折叠箱", pageSize: 100 });
+    const mine = center.runs.filter((r) => createdRunIds.includes(r.id));
+    // 只有 taskB 那条失败记录用这个标题
+    expect(mine).toHaveLength(1);
+    expect(mine[0].status).toBe("failed");
+  }, 30_000);
+
+  it("搜索里的 % 与 _ 按字面量处理，不当通配符", async () => {
+    // 不转义的话 % 会命中全部，用户看到的是「搜索没生效」
+    const percent = await listRunCenter(uid, { q: "%", pageSize: 100 });
+    expect(percent.filteredTotal).toBe(0);
+
+    const underscore = await listRunCenter(uid, { q: "_", pageSize: 100 });
+    expect(underscore.filteredTotal).toBe(0);
+  }, 30_000);
+
+  it("按 Agent 筛选只返回该 Agent 的记录，并给出全量 Agent 选项", async () => {
+    const center = await listRunCenter(uid, { agent: "product-researcher", pageSize: 100 });
+    expect(center.runs.length).toBeGreaterThanOrEqual(3);
+    expect(center.runs.every((r) => r.agentSlug === "product-researcher")).toBe(true);
+    expect(center.agents.some((a) => a.slug === "product-researcher" && a.count >= 3)).toBe(true);
+  }, 30_000);
+
+  it("分页：两页不重叠，总数与页数对得上", async () => {
+    const first = await listRunCenter(uid, { page: 1, pageSize: 2 });
+    const second = await listRunCenter(uid, { page: 2, pageSize: 2 });
+
+    expect(first.runs).toHaveLength(2);
+    expect(second.runs).toHaveLength(2);
+    const overlap = first.runs.filter((r) => second.runs.some((s) => s.id === r.id));
+    expect(overlap).toHaveLength(0);
+    expect(first.totalPages).toBe(Math.ceil(first.filteredTotal / 2));
+  }, 30_000);
+
+  it("页码越界夹到最后一页，不返回空页", async () => {
+    const center = await listRunCenter(uid, { page: 9999, pageSize: 5 });
+    expect(center.page).toBe(center.totalPages);
+    expect(center.runs.length).toBeGreaterThan(0);
+  }, 30_000);
+
+  it("attemptNo 跨页仍是全局序号，不从 1 重来", async () => {
+    // taskA 有两次执行（框架、模拟）。翻页取回后两条都要在，
+    // 若按页内行号数，第一条会从 1 重新开始。
+    const all = await listRunCenter(uid, { q: "咖啡器具", pageSize: 100 });
+    const mine = all.runs.filter((r) => createdRunIds.includes(r.id));
+    expect(mine).toHaveLength(2);
+    expect(mine.map((r) => r.attemptNo).sort((a, b) => a - b)).toEqual([1, 2]);
+
+    // 换成分页取：两页各 1 条，序号仍应是 1 和 2
+    const p1 = await listRunCenter(uid, { q: "咖啡器具", page: 1, pageSize: 1 });
+    const p2 = await listRunCenter(uid, { q: "咖啡器具", page: 2, pageSize: 1 });
+    expect([p1.runs[0].attemptNo, p2.runs[0].attemptNo].sort((a, b) => a - b)).toEqual([1, 2]);
   }, 30_000);
 });
