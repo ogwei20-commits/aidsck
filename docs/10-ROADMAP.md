@@ -14,7 +14,7 @@
 | S4 | AI Provider、总管家、Agent 注册与调度、执行记录、审批 | **已完成** | `src/server/ai/**`、`/api/v1/assistant/plan`、`/api/v1/agents/:id/run`、`/api/v1/agent-runs/:id`、`/api/v1/approvals` |
 | S5 | 市场、平台、选品、供应链、财务、报告 | **已完成** | `src/modules/defs/*`、`src/lib/finance/calc.ts`、`/api/v1/finance/calculate`、`/api/v1/reports/:id/export` |
 | S6 | 学习计划、能力评估、成长档案 | **已完成（CRUD）** | `src/modules/defs/learning.ts`、`growth.ts` |
-| S7 | 单元/集成/API/浏览器/安全/备份测试与文档 | **已完成** | `tests/`（24 文件 229 例）、`docs/`、`docs/ACCEPTANCE-SPRINT-1.md` |
+| S7 | 单元/集成/API/浏览器/安全/备份测试与文档 | **已完成** | `tests/`（29 文件 265 例）、`docs/`、`docs/ACCEPTANCE-SPRINT-1.md` |
 | S8 | 工作流引擎、中断续跑、人工闸门 | **已完成** | `src/server/ai/workflows/**`、`/api/v1/workflows`、`/api/v1/workflow-runs/*` |
 | S9 | 需求补齐：总管家调度、证据关联、错误边界、局域网运行 | **已完成** | `src/server/ai/orchestrator/dispatcher.ts`、`src/server/services/citations.ts`、`src/app/error.tsx`、`scripts/lan-address.mjs` |
 
@@ -23,21 +23,20 @@
 | 闸门 | 检查项 | 结果 |
 |---|---|---|
 | 需求评审 → 产品设计 | 平台形态 / MVP 范围 / 技术栈结论一致 | 通过（本地 Web 工作台，Next.js + PostgreSQL） |
-| 产品设计 → 开发 | PRD 完整、P0 范围明确、每项有验收标准 | 通过（PRD v2.0） |
+| 产品设计 → 开发 | PRD 完整、P0 范围明确、每项有验收标准 | 通过（PRD v2.1） |
 | 开发 → 测试 | 技术方案与功能清单对齐 | 通过 |
-| 测试 → 交付 | P0 缺陷 0、核心链路 100%、229 例全绿 | 通过 |
+| 测试 → 交付 | P0 缺陷 0、核心链路 100%、265 例全绿 | 通过 |
 | 交付 → 使用 | 部署说明、局域网访问、回滚与备份 | 通过（无公网部署，本地生产模式） |
 
 ## 3. 下一步（按优先级）
 
 | 优先级 | 事项 | 前置条件 | 说明 |
 |---|---|---|---|
-| 1 | CI（GitHub Actions） | 仓库已推送 | 让 229 项测试随提交自动跑 |
+| 1 | CI（GitHub Actions） | 仓库已推送 | 让 265 项测试随提交自动跑 |
 | 2 | 登录与多用户隔离 | — | 上公网前必须；本地局域网自用可暂缓 |
 | 3 | 工作流定时/触发运行 | 任务队列 | 现在只能手动推进 |
-| 4 | 汇率换算入口 | `currency_rates` 表已建 | 财务模块补一块 |
-| 5 | 文件内容解析与向量检索 | `file_chunks` 表已建 | 知识库检索 |
-| 6 | 接入真实模型 | 预算与 Provider 明确 | 同时把同步调度改成后台队列 |
+| 4 | 向量 / 语义检索 | 全文检索已可用 | 需 embedding 与相似度排序时再评估 |
+| 5 | 接入真实模型 | 预算与 Provider 明确 | 同时把同步调度改成后台队列 |
 
 ## 4. 明确不在路线图内
 

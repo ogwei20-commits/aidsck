@@ -270,7 +270,7 @@ GET /api/v1/agent-runs/:id
 - 关键词最长 100 字符；响应仍是数组，形状不变，既有消费方不用改。
 - 页面侧每页 20 条，用 `?q=&page=`；页码越界夹到最后一页，而不是给一张空表。
 
-## 8. 财务计算与证据关联（2026-11-15 新增）
+## 8. 财务计算、证据关联、汇率与全文检索（2026-11-15 新增）
 
 ### 8.1 财务计算
 
@@ -284,6 +284,8 @@ GET /api/v1/agent-runs/:id
 {
   "name": "冻干零食 19.9",
   "currency": "USD",
+  "costCurrency": "CNY",
+  "fxRate": 0.149485,
   "sellPrice": 19.9,
   "purchaseCost": 6,
   "shippingCost": 2.5,
@@ -302,6 +304,9 @@ GET /api/v1/agent-runs/:id
 - `snapshot`：`unitCost` / `unitProfit` / `margin` / `breakEvenUnits` / `monthlyProfit`，保留 4 位小数
 - `ladder`：五档对比（`prices` 缺省时按基准价 ±5%/±10% 生成），含 `minViablePrice` / `bestPrice` / `marginalPerUnit`
 - `breakEvenPrice`、`marginalProfitPerUnit`、`totalRatePercent` 单独给一份，调用方不必理解 ladder 结构
+- `fx`：`needed` / `rate` / `asOf` / `source` / `locked` / `missing`。`costCurrency` 留空或与 `currency` 相同则不折算（老数据零影响）；
+  填了但没给 `fxRate` 时按库里当前有效汇率解析；解析不到 `missing = true`，数字照算但明确标注不可信。
+- `snapshot.fxMissing` / `snapshot.fxRate`：调用方可据此判断结果能不能拿去定价。
 - `mode: "deterministic"`：明确这是公式计算，不含模型推断
 
 错误：费率 >100、金额为负、单量为小数或负数、档位超过 9 个 → 422，`details.fields` 指明字段。
@@ -321,6 +326,44 @@ GET /api/v1/agent-runs/:id
 - 每份报告最多 50 条，超出返回 409 `CITATION_LIMIT_EXCEEDED`。
 - 跨用户的 `reportId` 与 `citationId` 一律 404，不区分「不存在」与「不属于你」。
 - 删除不走审批：来源是报告的附属记录，删掉只影响这份报告自己的附录。
+
+### 8.3 汇率
+
+| Method | Path | 用途 |
+|---|---|---|
+| GET | `/api/v1/rates` | 每个货币对的当前有效汇率 + 历史条数；`?history=1` 额外返回最近 200 条历史 |
+| POST | `/api/v1/rates` | 手录一条，body `{ baseCurrency, quoteCurrency, rate, effectiveAt?, source?, dataType? }` |
+| POST | `/api/v1/rates/fetch` | 抓一批并落库，body `{ base?: "USD", targets?: ["CNY", ...] }` |
+| POST | `/api/v1/finance/scenarios/:id/lock` | 把当前汇率快照写进方案（之后汇率变化不再影响该方案） |
+| DELETE | `/api/v1/finance/scenarios/:id/lock` | 解除锁定，回到「按当前汇率试算」 |
+
+约定：
+
+- 币种统一大写、只收三位字母；同一货币对不允许相同。
+- **只追加不覆盖**：同一天改主意就再录一条，旧的那条留在历史里，上个月的账才对得上。
+- 抓取走 `open.er-api.com` → `api.frankfurter.dev` 两个免费源依次尝试，都失败返回 502 `RATE_SOURCE_UNAVAILABLE`，
+  响应提示「断网就手动录一条」。同源 + 同日 + 同值不重复写，避免连点五次多出五条一样的历史。
+- 汇率方向不设门槛：反向按 `1/r` 在内存推算，**不写库**，来源标「反向推算」，真实记录优先。
+- 锁定需要方案填了不同的成本币种；没有对应汇率返回 422 `RATE_MISSING`，同币种返回 422 `FX_NOT_NEEDED`。
+
+### 8.4 文件解析与全文检索
+
+| Method | Path | 用途 |
+|---|---|---|
+| POST | `/api/v1/files/:id/extract` | 提取正文 → 切块 → 落库；重复调用先删旧块 |
+| DELETE | `/api/v1/files/:id/extract` | 清掉索引回到 `pending` |
+| POST | `/api/v1/files/extract` | 批量解析全部 `pending`（单次最多 20 份，单份失败不中断） |
+| GET | `/api/v1/files/search?q=` | 文件名 + 正文分块检索，返回按文件分组的命中片段 |
+
+约定：
+
+- 可解析：`txt / md / csv / json`（直接读）、`PDF`（pdfjs-dist）、`Word docx`（mammoth）。
+  `xlsx / pptx / 图片 / zip` 标 `unsupported`，**不假装成功**；扫描版 PDF 提不出文字标 `empty` 并提示需要 OCR。
+- PDF 走 `serverExternalPackages`，读取包内 `cmaps/` 与 `standard_fonts/`——中文 CID 字体不给 cMap 会静默返回空字符串。
+- 切块 700 字、重叠 120 字，优先在句号/换行处断；单文件最多索引 40 万字并在结果里标 `truncated`。
+- 检索用 `ILIKE` 子串匹配（中文可用，不装 `zhparser` / `pg_bigm`），`%` 与 `_` 按字面转义；
+  join 回 `files` 带 `user_id` 过滤，不跨用户返回片段。
+- 所有片段由 React 转义后渲染 `<mark>`，不把文件内容当 HTML 执行。
 
 ## 9. 尚未实现（文档 6 剩余）
 
@@ -370,6 +413,29 @@ curl -s -X POST http://localhost:3000/api/v1/workflow-runs/<runId>/resume \
 
 # 读一次执行的完整记录（展开详情时才调）
 curl -s http://localhost:3000/api/v1/agent-runs/<runId>
+
+# 拉一批真实汇率（免费、无 key）；再点一次不会重复写
+curl -s -X POST http://localhost:3000/api/v1/rates/fetch \
+  -H "Content-Type: application/json" -d '{"base":"CNY"}'
+
+# 手录一条汇率（断网时用）
+curl -s -X POST http://localhost:3000/api/v1/rates \
+  -H "Content-Type: application/json" \
+  -d '{"baseCurrency":"CNY","quoteCurrency":"USD","rate":0.1408,"effectiveAt":"2026-11-15"}'
+
+# 成本 CNY、售价 USD，按库里当前汇率折算
+curl -s -X POST http://localhost:3000/api/v1/finance/calculate \
+  -H "Content-Type: application/json" \
+  -d '{"currency":"USD","costCurrency":"CNY","sellPrice":19.9,"purchaseCost":100,"commissionRate":15}'
+
+# 把当前汇率锁进方案（之后汇率变化不影响它）
+curl -s -X POST http://localhost:3000/api/v1/finance/scenarios/<scenarioId>/lock
+
+# 上传后解析正文
+curl -s -X POST http://localhost:3000/api/v1/files/<fileId>/extract
+
+# 全文检索（搜 50% 不会被当成通配符）
+curl -s "http://localhost:3000/api/v1/files/search?q=%E4%BF%9D%E6%9C%AC%E5%8D%95%E9%87%8F"
 
 # 导出报告（-OJ 按服务端给的文件名保存，中文名不乱码）
 curl -s -OJ "http://localhost:3000/api/v1/reports/<reportId>/export?format=md"

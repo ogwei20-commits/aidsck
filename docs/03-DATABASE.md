@@ -54,3 +54,16 @@ RESTORE_DATABASE_URL=<临时库> ASSUME_YES=1 npm run db:restore -- <文件>   #
 ```
 
 恢复是破坏性操作，脚本默认要求人工确认；演练一律恢复到临时库，不动主库。
+
+## 6. 迁移 0003 新增字段（2026-11-15）
+
+只加列、不删不改，老数据行为完全不变。
+
+| 表 | 新列 | 用途 |
+|---|---|---|
+| `finance_scenarios` | `cost_currency` | 空字符串 = 与售价币种相同；老数据因此不需要回填 |
+| `finance_scenarios` | `fx_rate` / `fx_as_of` / `fx_source` | 方案锁定的汇率快照；`fx_rate = 0` 表示未锁定，按当前汇率试算 |
+| `files` | `extract_status` / `extract_error` / `extracted_at` / `char_count` | 解析状态、失败原因、时间与字数；只看「有没有 chunk」分不清「没点过」和「每次都失败」 |
+
+`currency_rates` 与 `file_chunks` 两张表在 0001 已建，**0003 只接上服务与界面**，没有新增表。
+汇率只追加不覆盖；反向汇率按 `1/r` 在内存推算，不写库。文件索引可重建：每次先删旧块，不产生重复。
