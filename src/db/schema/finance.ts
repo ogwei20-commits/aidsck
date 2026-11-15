@@ -30,6 +30,15 @@ export const financeScenarios = pgTable(
     productId: uuid("product_id").references(() => products.id, { onDelete: "set null" }),
     platformId: uuid("platform_id").references(() => platforms.id, { onDelete: "set null" }),
     currency: text("currency").notNull().default("USD"),
+    /**
+     * 成本币种。空字符串表示「与售价币种相同」——老数据因此不需要回填，
+     * 也不会因为新加一列就突然按汇率折算。
+     */
+    costCurrency: text("cost_currency").notNull().default(""),
+    /** 锁定汇率：1 单位成本币种 = fx_rate 单位售价币种。0 表示未锁定，按当前汇率试算 */
+    fxRate: rate("fx_rate").notNull().default("0"),
+    fxAsOf: timestamp("fx_as_of", { withTimezone: true }),
+    fxSource: text("fx_source").notNull().default(""),
     sellPrice: money("sell_price").notNull().default("0"),
     purchaseCost: money("purchase_cost").notNull().default("0"),
     shippingCost: money("shipping_cost").notNull().default("0"),

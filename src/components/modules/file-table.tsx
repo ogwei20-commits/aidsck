@@ -1,4 +1,6 @@
 import { formatDateTime } from "@/lib/utils/format";
+import type { ExtractStatus } from "@/server/services/file-extract";
+import { FileExtractButton } from "./file-extract-button";
 
 type FileRow = {
   id: string;
@@ -8,6 +10,9 @@ type FileRow = {
   purpose: string;
   checksum: string;
   createdAt: Date | string;
+  extractStatus: ExtractStatus;
+  charCount: number;
+  extractError: string;
 };
 
 function humanSize(bytes: number): string {
@@ -57,6 +62,7 @@ export function FileTable({ rows }: { rows: FileRow[] }) {
             <th>大小</th>
             <th>用途</th>
             <th>校验和</th>
+            <th>全文索引</th>
             <th>上传时间</th>
             <th className="col-actions">操作</th>
           </tr>
@@ -80,6 +86,14 @@ export function FileTable({ rows }: { rows: FileRow[] }) {
                 <span className="mono" title={row.checksum}>
                   {row.checksum ? `${row.checksum.slice(0, 8)}…` : "—"}
                 </span>
+              </td>
+              <td>
+                <FileExtractButton
+                  fileId={row.id}
+                  status={row.extractStatus}
+                  charCount={row.charCount}
+                  error={row.extractError}
+                />
               </td>
               <td>
                 <span className="mono">{formatDateTime(String(row.createdAt))}</span>

@@ -14,6 +14,15 @@ export const files = pgTable(
     storagePath: text("storage_path").notNull(),
     checksum: text("checksum").notNull().default(""),
     purpose: text("purpose").notNull().default(""),
+    /**
+     * 内容提取状态。pending 未解析 / ok 已入库 / failed 解析失败（有原因）/
+     * unsupported 类型不支持（不是错误，是明确不做）。
+     * 必须有状态字段：只有「有没有 chunk」无法区分「没点过」和「每次都失败」。
+     */
+    extractStatus: text("extract_status").notNull().default("pending"),
+    extractError: text("extract_error").notNull().default(""),
+    extractedAt: timestamp("extracted_at", { withTimezone: true }),
+    charCount: integer("char_count").notNull().default(0),
   },
   (t) => [index("files_user_idx").on(t.userId, t.createdAt)],
 );

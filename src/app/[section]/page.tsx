@@ -3,10 +3,13 @@ import { ModuleCreateForm, type RefMap } from "@/components/modules/module-clien
 import { ModuleTable } from "@/components/modules/module-table";
 import { ListToolbar } from "@/components/modules/list-toolbar";
 import { FinanceResults } from "@/components/modules/finance-result";
+import { RatePanel } from "@/components/modules/rate-panel";
 import { AssistantWorkspace } from "@/components/modules/assistant";
 import { LineageView } from "@/components/modules/lineage";
 import { FileUpload } from "@/components/modules/file-upload";
 import { FileTable } from "@/components/modules/file-table";
+import { FileSearchBar } from "@/components/modules/file-search-bar";
+import { FileSearchResults } from "@/components/modules/file-search-results";
 import { ReportExport } from "@/components/modules/report-export";
 import { CitationPanel } from "@/components/modules/citation-panel";
 import { WorkflowCenter } from "@/components/modules/workflow-center";
@@ -20,6 +23,11 @@ import { getWorkflowRun, listWorkflowsWithRuns } from "@/server/ai/workflows/eng
 import { listRunCenter, type RunCenter } from "@/server/services/agent-runs";
 import { listCitations, listReportOptions, type CitationView, type ReportOption } from "@/server/services/citations";
 import { listMilestones, type MilestoneGroup } from "@/server/services/milestones";
+import { listEffectiveQuotes, listRatePairs, type RatePair } from "@/server/services/rates";
+import { searchFiles, type FileSearchResult } from "@/server/services/file-search";
+import { countPendingFiles } from "@/server/services/file-extract";
+import type { ExtractStatus } from "@/server/services/file-extract";
+import type { FxQuote } from "@/lib/finance/fx";
 
 export const dynamic = "force-dynamic";
 
@@ -147,6 +155,8 @@ export default async function SectionPage({ params, searchParams }: Ctx) {
   if (!def) notFound();
 
   const q = single(sp.q).slice(0, 100);
+  /** fq 是全文检索关键词；与列表搜索 q 分开，否则两个搜索会互相覆盖 */
+  const fq = single(sp.fq).slice(0, 100);
   const pageNo = Number(single(sp.page)) || 1;
 
   let rows: Row[] = [];
@@ -190,6 +200,33 @@ export default async function SectionPage({ params, searchParams }: Ctx) {
     }
   }
 
+  // 汇率只属于财务页：方案要按它折算成本。读不到时结果卡会标「汇率缺失」而不是整页崩
+  let fxQuotes: FxQuote[] = [];
+  let ratePairs: RatePair[] = [];
+  if (def.slug === "finance") {
+    try {
+      [fxQuotes, ratePairs] = await Promise.all([listEffectiveQuotes(), listRatePairs()]);
+    } catch (error) {
+      dbError = dbError ?? humanizeDbError(error);
+    }
+  }
+
+  // 全文检索只属于文件页。有关键词才查，别让每个文件页都白跑一次搜索
+  let searchResult: FileSearchResult | null = null;
+  let pendingCount = 0;
+  if (isFiles) {
+    try {
+      const [pending, search] = await Promise.all([
+        countPendingFiles(userId),
+        fq ? searchFiles(userId, fq) : Promise.resolve(null),
+      ]);
+      pendingCount = pending;
+      searchResult = search;
+    } catch (error) {
+      dbError = dbError ?? humanizeDbError(error);
+    }
+  }
+
   const fileRows = isFiles
     ? rows.map((r) => ({
         id: String(r.id),
@@ -199,6 +236,9 @@ export default async function SectionPage({ params, searchParams }: Ctx) {
         purpose: String(r.purpose ?? ""),
         checksum: String(r.checksum ?? ""),
         createdAt: r.createdAt instanceof Date ? r.createdAt : String(r.createdAt ?? ""),
+        extractStatus: (String(r.extractStatus ?? "pending") || "pending") as ExtractStatus,
+        charCount: Number(r.charCount ?? 0),
+        extractError: String(r.extractError ?? ""),
       }))
     : [];
 
@@ -254,16 +294,37 @@ export default async function SectionPage({ params, searchParams }: Ctx) {
         <section className="section">
           <div className="section-head">
             <h2><span className="section-index">02 /</span>算出来的结果</h2>
-            <p>公式固定，改任一输入都会重算</p>
+            <p>公式固定，改任一输入都会重算；成本币种不同时按汇率折算，并写明用的是哪条汇率</p>
           </div>
-          <FinanceResults rows={rows} />
+          <FinanceResults rows={rows} rates={fxQuotes} />
+        </section>
+      )}
+
+      {def.slug === "finance" && (
+        <section className="section">
+          <div className="section-head">
+            <h2><span className="section-index">03 /</span>汇率</h2>
+            <p>只追加不覆盖：同一天改主意就再录一条，旧的那条留在历史里，上个月的账才对得上</p>
+          </div>
+          <RatePanel pairs={ratePairs} />
+        </section>
+      )}
+
+      {isFiles && (
+        <section className="section">
+          <div className="section-head">
+            <h2><span className="section-index">02 /</span>全文检索</h2>
+            <p>搜文件名与已解析的正文；命中处标出关键词，点文件名可下载原件</p>
+          </div>
+          <FileSearchBar q={fq} pendingCount={pendingCount} />
+          {searchResult && <FileSearchResults result={searchResult} />}
         </section>
       )}
 
       <section className="section">
         <div className="section-head">
           <h2>
-            <span className="section-index">{isProjects || def.slug === "finance" ? "03" : "02"} /</span>
+            <span className="section-index">{def.slug === "finance" ? "04" : isFiles || isProjects ? "03" : "02"} /</span>
             {isFiles ? "已上传文件" : "全部记录"}
           </h2>
           <p>{isFiles ? "下载会校验路径，磁盘缺件时明确报错" : def.scope === "shared" ? "含系统内置项" : "仅当前用户数据"}</p>

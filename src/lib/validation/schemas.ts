@@ -170,6 +170,10 @@ const rateField = (label: string) =>
 export const calculateFinanceSchema = z.object({
   name: z.string().trim().max(120, "方案名称最多 120 个字符").optional().default(""),
   currency: z.string().trim().min(1).max(8).optional().default("USD"),
+  /** 成本币种；留空 = 与售价币种相同。填了就按汇率把成本折算到售价币种 */
+  costCurrency: z.string().trim().max(8).optional().default(""),
+  /** 折算汇率；不传则按库里当前有效汇率解析，解析不到就明确报缺 */
+  fxRate: z.number().finite("汇率必须是数字").positive("汇率必须大于 0").max(1_000_000).optional(),
   sellPrice: z.number().finite("售价必须是数字").min(0, "售价不能为负数").max(1_000_000_000).optional().default(0),
   purchaseCost: moneyField("采购成本"),
   shippingCost: moneyField("运费"),
@@ -184,6 +188,47 @@ export const calculateFinanceSchema = z.object({
 });
 
 export type CalculateFinanceInput = z.infer<typeof calculateFinanceSchema>;
+
+/* ────────────────────────────────────────────────────────────
+ * 汇率
+ *
+ * 只收三位字母代码并统一大写：CNY 与 cny 是同一个币种，
+ * 存成两种写法会让「查当前汇率」永远查不到其中一种。
+ * ──────────────────────────────────────────────────────────── */
+export const currencyCodeSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z]{3}$/, "币种须为三位字母代码，如 USD")
+  .transform((v) => v.toUpperCase());
+
+export const createRateSchema = z
+  .object({
+    baseCurrency: currencyCodeSchema,
+    quoteCurrency: currencyCodeSchema,
+    rate: z.number().finite("汇率必须是数字").positive("汇率必须大于 0").max(1_000_000, "汇率超出合理范围"),
+    /** YYYY-MM-DD 或完整 ISO；不传按当前时间 */
+    effectiveAt: z.string().trim().max(40).optional().default(""),
+    source: z.string().trim().max(80).optional().default("manual"),
+    dataType: z.enum(["R", "E", "P", "S", "U"]).optional().default("U"),
+  })
+  .refine((v) => v.baseCurrency !== v.quoteCurrency, {
+    message: "基准币种与报价币种不能相同",
+    path: ["quoteCurrency"],
+  })
+  .refine((v) => v.effectiveAt === "" || !Number.isNaN(Date.parse(v.effectiveAt)), {
+    message: "生效时间格式不正确，请用 YYYY-MM-DD",
+    path: ["effectiveAt"],
+  });
+
+export const fetchRatesSchema = z.object({
+  base: currencyCodeSchema.default("USD"),
+  /** 只接受一批白名单币种，避免一次写入上百条无关汇率 */
+  targets: z.array(currencyCodeSchema).min(1).max(30).optional(),
+});
+
+export type CreateRateInput = z.infer<typeof createRateSchema>;
+export type FetchRatesInput = z.infer<typeof fetchRatesSchema>;
+
 export type ResumeWorkflowInput = z.infer<typeof resumeWorkflowSchema>;
 
 export type RunTaskInput = z.infer<typeof runTaskSchema>;

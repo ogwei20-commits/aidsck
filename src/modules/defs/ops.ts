@@ -33,6 +33,13 @@ export const OPS_MODULES: ModuleDef[] = [
     fields: [
       { name: "name", label: "方案名称", kind: "text", required: true, placeholder: "冻干零食 · 美国 19.9 美元档" },
       { name: "currency", label: "币种", kind: "text", default: "USD" },
+      {
+        name: "costCurrency",
+        label: "成本币种（留空=与售价相同）",
+        kind: "text",
+        default: "",
+        placeholder: "CNY",
+      },
       { name: "sellPrice", label: "售价", kind: "money", default: "0" },
       { name: "purchaseCost", label: "采购成本", kind: "money", default: "0" },
       { name: "shippingCost", label: "头程+尾程", kind: "money", default: "0" },

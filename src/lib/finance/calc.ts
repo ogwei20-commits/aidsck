@@ -22,6 +22,12 @@ export interface FinanceInput {
   expectedOrders: number;
   currency: string;
   name: string;
+  /** 成本币种；空表示与 currency 相同 */
+  costCurrency?: string;
+  /** 1 单位成本币种 = fxRate 单位售价币种。<=0 表示没有可用汇率 */
+  fxRate?: number;
+  /** 需要折算但没汇率。只影响展示与结论可信度，不改变计算路径 */
+  fxMissing?: boolean;
 }
 
 export interface FinanceSnapshot {
@@ -32,6 +38,10 @@ export interface FinanceSnapshot {
   margin: number;
   currency: string;
   breakEvenUnits: number;
+  /** 成本没有折算成售价币种——此时数字不能拿去定价 */
+  fxMissing: boolean;
+  /** 实际使用的折算系数（1 表示不折算） */
+  fxRate: number;
 }
 
 /** 四舍五入到 4 位，和数据库 numeric(12,4) 保持一致，避免浮点尾巴 */
@@ -44,19 +54,39 @@ export function rateSum(i: Pick<FinanceInput, "commissionRate" | "paymentRate">)
   return (i.commissionRate + i.paymentRate) / 100;
 }
 
-/** 与售价无关的那部分单件成本：采购 + 运费 + 广告 + 单件其他 */
-export function fixedUnitCost(
-  i: Pick<FinanceInput, "purchaseCost" | "shippingCost" | "adCost" | "otherCost">,
+/**
+ * 成本折算系数。
+ * 只有「填了成本币种、且与售价币种不同」才折算；没汇率时返回 1，
+ * 由 fxMissing 标记把「不可信」这件事显式说出来，而不是悄悄按 1:1 算完当没事。
+ */
+export function costFactor(
+  i: Pick<FinanceInput, "costCurrency" | "currency" | "fxRate">,
 ): number {
-  return i.purchaseCost + i.shippingCost + i.adCost + i.otherCost;
+  const base = (i.costCurrency ?? "").trim().toUpperCase();
+  const quote = (i.currency ?? "").trim().toUpperCase();
+  if (!base || !quote || base === quote) return 1;
+  const rate = Number(i.fxRate ?? 0);
+  return Number.isFinite(rate) && rate > 0 ? rate : 1;
+}
+
+/** 与售价无关的那部分单件成本：采购 + 运费 + 广告 + 单件其他（已折算到售价币种） */
+export function fixedUnitCost(
+  i: Pick<FinanceInput, "purchaseCost" | "shippingCost" | "adCost" | "otherCost"> &
+    Pick<FinanceInput, "costCurrency" | "currency" | "fxRate">,
+): number {
+  const factor = costFactor(i);
+  return (i.purchaseCost + i.shippingCost + i.adCost + i.otherCost) * factor;
 }
 
 export function computeFinance(i: FinanceInput): FinanceSnapshot & { monthlyProfit: number } {
   const r = rateSum(i);
+  const factor = costFactor(i);
   const unitCost = round4(fixedUnitCost(i) + i.sellPrice * r);
   const unitProfit = round4(i.sellPrice - unitCost);
   const margin = i.sellPrice > 0 ? (unitProfit / i.sellPrice) * 100 : 0;
-  const breakEvenUnits = unitProfit > 0 && i.fixedCost > 0 ? Math.ceil(i.fixedCost / unitProfit) : 0;
+  // 固定投入与单件成本同币种，必须一起折算，否则分子分母不同单位
+  const fixed = round4(i.fixedCost * factor);
+  const breakEvenUnits = unitProfit > 0 && fixed > 0 ? Math.ceil(fixed / unitProfit) : 0;
   return {
     name: i.name,
     sellPrice: i.sellPrice,
@@ -65,7 +95,9 @@ export function computeFinance(i: FinanceInput): FinanceSnapshot & { monthlyProf
     margin,
     currency: i.currency,
     breakEvenUnits,
-    monthlyProfit: round4(unitProfit * i.expectedOrders - i.fixedCost),
+    fxMissing: Boolean(i.fxMissing),
+    fxRate: factor,
+    monthlyProfit: round4(unitProfit * i.expectedOrders - fixed),
   };
 }
 
@@ -199,6 +231,8 @@ export function parseFinanceRow(raw: Record<string, unknown>): FinanceInput {
   return {
     name: text("name"),
     currency: text("currency") || "USD",
+    costCurrency: text("costCurrency", "cost_currency"),
+    fxRate: num("fxRate", "fx_rate"),
     sellPrice: num("sellPrice", "sell_price"),
     purchaseCost: num("purchaseCost", "purchase_cost"),
     shippingCost: num("shippingCost", "shipping_cost"),

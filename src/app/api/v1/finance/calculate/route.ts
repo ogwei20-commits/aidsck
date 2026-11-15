@@ -7,8 +7,10 @@ import {
   round4,
   type FinanceInput,
 } from "@/lib/finance/calc";
+import { resolveFx } from "@/lib/finance/fx";
 import { fail, ok, parseInput, readJson } from "@/lib/errors/api";
 import { calculateFinanceSchema } from "@/lib/validation/schemas";
+import { latestRate } from "@/server/services/rates";
 
 export const dynamic = "force-dynamic";
 
@@ -20,11 +22,34 @@ export const dynamic = "force-dynamic";
  * 2. 页面上的数字可以被人眼复核，而对外调用（脚本、未来的自动化）只能靠接口；
  * 3. 口径只有一份（lib/finance/calc.ts），接口只做输入校验与结果组装。
  *
+ * 汇率：调用方可以自己给 fxRate；不给就按库里当前有效汇率解析。
+ * 解析不到时返回 fx.missing = true，数字照算但明确标注「成本未折算」——
+ * 静默按 1:1 算出一个看起来很正常的利润，比报错危险得多。
+ *
  * 不写库：这是纯计算。要留存结果，走财务方案模块的创建接口。
  */
 export async function POST(request: Request) {
   try {
     const input = parseInput(calculateFinanceSchema, await readJson(request));
+
+    const base = input.costCurrency.trim().toUpperCase();
+    const quote = input.currency.trim().toUpperCase();
+    const needed = Boolean(base) && Boolean(quote) && base !== quote;
+
+    let fx;
+    if (!needed) {
+      fx = resolveFx({ costCurrency: base, currency: quote });
+    } else if (input.fxRate && input.fxRate > 0) {
+      fx = resolveFx({
+        costCurrency: base,
+        currency: quote,
+        lockedRate: input.fxRate,
+        lockedSource: "request",
+      });
+    } else {
+      const current = await latestRate(base, quote);
+      fx = resolveFx({ costCurrency: base, currency: quote, current });
+    }
 
     const finance: FinanceInput = {
       name: input.name,
@@ -38,6 +63,9 @@ export async function POST(request: Request) {
       fixedCost: input.fixedCost,
       expectedOrders: input.expectedOrders,
       currency: input.currency,
+      costCurrency: base,
+      fxRate: fx.rate,
+      fxMissing: fx.missing,
     };
 
     const snapshot = computeFinance(finance);
@@ -48,6 +76,8 @@ export async function POST(request: Request) {
       mode: "deterministic",
       note: "纯公式计算，不含任何模型推断；金额保留 4 位小数，与数据库 numeric 口径一致。",
       currency: input.currency,
+      costCurrency: base || input.currency,
+      fx,
       snapshot,
       ladder,
       /** 单独再给一份，便于调用方不必理解 ladder 结构 */
