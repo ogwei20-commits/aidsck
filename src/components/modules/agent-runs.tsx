@@ -129,18 +129,36 @@ export function AgentRuns({
   currentMode: string;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
+  const [agentSlug, setAgentSlug] = useState<string>("all");
   const [openId, setOpenId] = useState<string | null>(null);
   const [details, setDetails] = useState<Record<string, RunDetail>>({});
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
 
+  /**
+   * Agent 下拉的选项从已有记录里生成，不查 Agent 注册表：
+   * 列出「注册了但一次没跑过」的角色只会让人以为筛选坏了。
+   */
+  const agentOptions = useMemo(() => {
+    const map = new Map<string, { slug: string; name: string; count: number }>();
+    for (const run of runs) {
+      const key = run.agentSlug || run.agentName;
+      const found = map.get(key);
+      if (found) found.count += 1;
+      else map.set(key, { slug: key, name: run.agentName, count: 1 });
+    }
+    return [...map.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "zh-CN"));
+  }, [runs]);
+
   const shown = useMemo(() => {
-    if (filter === "model") return runs.filter((r) => r.mode === "model");
-    if (filter === "framework") return runs.filter((r) => r.mode === "framework");
-    if (filter === "failed") return runs.filter((r) => r.status === "failed");
-    return runs;
-  }, [runs, filter]);
+    let list = runs;
+    if (filter === "model") list = list.filter((r) => r.mode === "model");
+    else if (filter === "framework") list = list.filter((r) => r.mode === "framework");
+    else if (filter === "failed") list = list.filter((r) => r.status === "failed");
+    if (agentSlug !== "all") list = list.filter((r) => (r.agentSlug || r.agentName) === agentSlug);
+    return list;
+  }, [runs, filter, agentSlug]);
 
   const counts: Record<Filter, number> = {
     all: stats.total,
@@ -262,6 +280,29 @@ export function AgentRuns({
         <p className="runs-hint">点任意一行展开输入与产出全文</p>
       </div>
 
+      {agentOptions.length > 1 && (
+        <div className="runs-agent-bar">
+          <label htmlFor="runs-agent-filter">按 Agent</label>
+          <select
+            id="runs-agent-filter"
+            value={agentSlug}
+            onChange={(e) => setAgentSlug(e.target.value)}
+          >
+            <option value="all">全部 Agent（{runs.length}）</option>
+            {agentOptions.map((o) => (
+              <option key={o.slug} value={o.slug}>
+                {o.name}（{o.count}）
+              </option>
+            ))}
+          </select>
+          {agentSlug !== "all" && (
+            <button type="button" className="runs-filter" onClick={() => setAgentSlug("all")}>
+              清除 Agent 筛选
+            </button>
+          )}
+        </div>
+      )}
+
       {error && (
         <p className="runs-error" role="alert">
           {error}
@@ -272,7 +313,9 @@ export function AgentRuns({
         <p className="runs-empty">
           {stats.total === 0
             ? "去任务中心把一条任务派给 Agent，执行完这里就有记录。"
-            : "这个筛选下没有记录。"}
+            : agentSlug !== "all"
+              ? "这个 Agent 在当前筛选下没有记录。"
+              : "这个筛选下没有记录。"}
         </p>
       ) : (
         <ul className="runs-list">

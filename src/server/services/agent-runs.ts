@@ -222,14 +222,92 @@ export async function listRunCenter(userId: string, limit = 50): Promise<RunCent
   };
 }
 
+export interface RecentRun {
+  id: string;
+  agentName: string;
+  taskId: string | null;
+  taskTitle: string | null;
+  /** 任务当前状态：首页据此显示「待你确认」，执行完的那条能直接收口 */
+  taskStatus: string | null;
+  status: string;
+  mode: RunMode;
+  startedAt: string | null;
+  durationMs: number | null;
+  outputChars: number;
+  outputPreview: string | null;
+  error: string | null;
+}
+
+/**
+ * 首页用的「最近执行」：只取最近几条，不算全量统计。
+ *
+ * 不直接复用 listRunCenter 的原因：那边每次都要跑一次全表聚合，
+ * 首页只是要四行结果，不该为了四行付一次全表扫描。
+ * 摘要取 280 字——比执行记录页的 160 字长，因为首页没有列表列宽限制，
+ * 多给两行能让人不点开也大致知道产出了什么。
+ */
+export async function listRecentRuns(userId: string, limit = 4): Promise<RecentRun[]> {
+  const db = getDb();
+  const rows = (await db
+    .select({
+      id: agentRuns.id,
+      agentName: sql<string>`coalesce(${agents.name}, '已删除的 Agent')`,
+      taskId: agentRuns.taskId,
+      taskTitle: tasks.title,
+      taskStatus: tasks.status,
+      status: agentRuns.status,
+      provider: agentRuns.provider,
+      startedAt: agentRuns.startedAt,
+      durationMs: sql<
+        number | null
+      >`case when ${agentRuns.startedAt} is null or ${agentRuns.finishedAt} is null then null
+             else round(extract(epoch from (${agentRuns.finishedAt} - ${agentRuns.startedAt})) * 1000)::int end`,
+      outputChars: sql<number>`coalesce((
+        select length(m.content) from agent_messages m
+        where m.run_id = ${agentRuns.id} and m.role = 'assistant'
+        order by m.created_at desc limit 1
+      ), 0)::int`,
+      outputPreview: sql<
+        string | null
+      >`(select left(m.content, 280) from agent_messages m
+         where m.run_id = ${agentRuns.id} and m.role = 'assistant'
+         order by m.created_at desc limit 1)`,
+      error: agentRuns.error,
+    })
+    .from(agentRuns)
+    .leftJoin(agents, eq(agents.id, agentRuns.agentId))
+    .leftJoin(tasks, eq(tasks.id, agentRuns.taskId))
+    .where(eq(agentRuns.userId, userId))
+    .orderBy(desc(agentRuns.createdAt))
+    .limit(Math.min(Math.max(limit, 1), 20))) as (Omit<RecentRun, "mode" | "startedAt" | "durationMs" | "outputChars"> & {
+    provider: string;
+    startedAt: Date | null;
+    durationMs: number | null;
+    outputChars: number;
+  })[];
+
+  return rows.map((row) => ({
+    id: row.id,
+    agentName: row.agentName,
+    taskId: row.taskId,
+    taskTitle: row.taskTitle,
+    taskStatus: row.taskStatus,
+    status: row.status,
+    mode: modeOf(row.provider, num(row.outputChars) > 0),
+    startedAt: iso(row.startedAt),
+    durationMs: row.durationMs === null ? null : num(row.durationMs),
+    outputChars: num(row.outputChars),
+    outputPreview: row.outputPreview,
+    error: row.error,
+  }));
+}
+
 export interface RunMessage {
   id: string;
   role: string;
   content: string;
   createdAt: string;
-}
-
-export interface RunDetail extends RunSummary {
+}export interface RunDetail extends RunSummary {
   messages: RunMessage[];
   /** 这次执行写进任务的日志，便于对照「执行时看到了什么」 */
   agentDescription: string | null;

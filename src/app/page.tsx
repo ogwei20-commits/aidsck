@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { HomeComposer } from "@/components/dashboard/home-composer";
+import { RecentRuns } from "@/components/dashboard/recent-runs";
 import { getEnv } from "@/lib/config/env";
 import { formatDateTime } from "@/lib/utils/format";
 import { getProviderStatus } from "@/server/ai/providers";
 import { AGENT_REGISTRY } from "@/server/ai/agents/registry";
 import { getAgentRunCounts, getDashboardData, type DashboardData } from "@/server/services/dashboard";
+import { listRecentRuns, type RecentRun } from "@/server/services/agent-runs";
 
 export const dynamic = "force-dynamic";
 
@@ -25,11 +27,13 @@ export default async function Home() {
 
   let data: DashboardData | null = null;
   let runCounts: Record<string, number> = {};
+  let recentRuns: RecentRun[] = [];
   let dbError: string | null = null;
 
   try {
     data = await getDashboardData(userId);
     runCounts = await getAgentRunCounts();
+    recentRuns = await listRecentRuns(userId, 4);
   } catch (error) {
     dbError = error instanceof Error ? error.message : "数据库连接失败";
   }
@@ -39,6 +43,9 @@ export default async function Home() {
   const profitText = data?.finance
     ? `${data.finance.unitProfit >= 0 ? "+" : "−"}${Math.abs(data.finance.unitProfit).toFixed(2)}`
     : "—";
+  // 顶部这句原本写死「当前都没有真实运行记录」，接了执行引擎之后就不再成立
+  const ranAgents = Object.values(runCounts).filter((n) => n > 0).length;
+  const totalRuns = Object.values(runCounts).reduce((sum, n) => sum + n, 0);
 
   return (
     <>
@@ -241,11 +248,26 @@ export default async function Home() {
         </div>
       </section>
 
+      {/* ③ 最近执行：派出去的活，有结果了吗 */}
+      {!dbError && (
+        <section className="section is-loose">
+          <div className="section-head">
+            <h2><span className="section-index">03 /</span>派出去的活，有结果了吗</h2>
+            <p>执行完的产出直接在这里看，不用再跳到执行记录</p>
+          </div>
+          <RecentRuns runs={recentRuns} />
+        </section>
+      )}
+
       {/* ④ 谁在干活 */}
       <section className="section">
         <div className="section-head">
-          <h2><span className="section-index">03 /</span>谁在干活</h2>
-          <p>注册了 {AGENT_REGISTRY.length} 个角色 · 当前都没有真实运行记录</p>
+          <h2><span className="section-index">04 /</span>谁在干活</h2>
+          <p>
+            {ranAgents > 0
+              ? `注册了 ${AGENT_REGISTRY.length} 个角色 · ${ranAgents} 个跑过 · 共 ${totalRuns} 次执行`
+              : `注册了 ${AGENT_REGISTRY.length} 个角色 · 还没有一次真实运行`}
+          </p>
         </div>
         <div className="agent-grid">
           {AGENT_REGISTRY.map((a) => {
@@ -269,7 +291,7 @@ export default async function Home() {
       {/* ⑤ 沉淀 */}
       <section className="section is-loose">
         <div className="section-head">
-          <h2><span className="section-index">04 /</span>沉淀下来的东西</h2>
+          <h2><span className="section-index">05 /</span>沉淀下来的东西</h2>
           <p>研究完就忘，等于没研究</p>
         </div>
         <div className="split">
@@ -327,7 +349,7 @@ export default async function Home() {
       {/* ⑥ 边界：真实风险，不是开发进度 */}
       <section className="section">
         <div className="section-head">
-          <h2><span className="section-index">05 /</span>现在的边界</h2>
+          <h2><span className="section-index">06 /</span>现在的边界</h2>
           <p>这些限制是真实存在的，别指望它们不存在</p>
         </div>
         <div className="notice-grid">

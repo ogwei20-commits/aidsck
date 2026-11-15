@@ -109,8 +109,26 @@ export const resumeWorkflowSchema = z.object({
   note: z.string().trim().max(2000, "备注最多 2000 个字符").optional().default(""),
 });
 
-export type StartWorkflowInput = z.infer<typeof startWorkflowSchema>;
-export type DecideWorkflowInput = z.infer<typeof decideWorkflowSchema>;
+/** 项目里程碑：日期只到天，格式严格校验，避免 new Date 把 2026-13-45 吞成 Invalid Date */
+export const createMilestoneSchema = z.object({
+  projectId: z.string().uuid("projectId 必须是合法 UUID"),
+  title: z.string().trim().min(2, "里程碑至少 2 个字符").max(160, "里程碑最多 160 个字符"),
+  dueAt: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "截止日期格式应为 YYYY-MM-DD")
+    .nullish(),
+});
+
+export const patchMilestoneSchema = z
+  .object({
+    done: z.boolean().optional(),
+    title: z.string().trim().min(2, "里程碑至少 2 个字符").max(160, "里程碑最多 160 个字符").optional(),
+  })
+  .refine((v) => v.done !== undefined || v.title !== undefined, {
+    message: "至少提供 done 或 title 中的一项",
+  });
+
+export type StartWorkflowInput = z.infer<typeof startWorkflowSchema>;export type DecideWorkflowInput = z.infer<typeof decideWorkflowSchema>;
 export type ResumeWorkflowInput = z.infer<typeof resumeWorkflowSchema>;
 
 export type RunTaskInput = z.infer<typeof runTaskSchema>;

@@ -2,7 +2,7 @@ import { getDb } from "@/db";
 import { AppError, fail, ok, readJson } from "@/lib/errors/api";
 import { getEnv } from "@/lib/config/env";
 import { getModule } from "@/modules/registry";
-import { createRow, listRows, missingRequired, type Row } from "@/modules/store";
+import { createRow, listRows, listRowsPaged, missingRequired, type Row } from "@/modules/store";
 import { writeAudit } from "@/server/audit/logger";
 import type { ModuleDef } from "@/modules/types";
 
@@ -19,14 +19,22 @@ function resolve(slug: string): ModuleDef {
   return def;
 }
 
-export async function GET(_request: Request, ctx: Ctx) {
+export async function GET(request: Request, ctx: Ctx) {
   try {
     const def = resolve((await ctx.params).module);
-    if (def.scope === "global") {
-      // system_settings 是全局表，仍按同一接口读取
-      return ok(await listRows(def, getEnv().APP_USER_ID));
+    const url = new URL(request.url);
+    const q = (url.searchParams.get("q") ?? "").trim().slice(0, 100);
+    const userId = getEnv().APP_USER_ID;
+
+    // 带关键词时走同一套 LIKE 逻辑（与页面搜索共用，避免两处口径不一致）。
+    // 响应形状仍是数组：接口的既有消费方按数组解析，不能因为加分页就改形状。
+    if (q) {
+      const paged = await listRowsPaged(def, userId, { q, pageSize: 50 });
+      return ok(paged.rows);
     }
-    return ok(await listRows(def, getEnv().APP_USER_ID));
+
+    // system_settings 是全局表，也走同一接口：listRows 内部按 scope 决定过滤条件
+    return ok(await listRows(def, userId));
   } catch (error) {
     return fail(error);
   }

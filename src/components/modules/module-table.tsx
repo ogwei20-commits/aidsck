@@ -51,12 +51,23 @@ function renderCell(col: ListColumn, row: Row) {
   return <span className="cell-text">{text}</span>;
 }
 
-export function ModuleTable({ def, rows }: { def: ModuleDef; rows: Row[] }) {
+export function ModuleTable({
+  def,
+  rows,
+  emptyTitle,
+  emptyHint,
+}: {
+  def: ModuleDef;
+  rows: Row[];
+  /** 搜索无结果与「一条都没有」是两件事，提示不能复用 */
+  emptyTitle?: string;
+  emptyHint?: string;
+}) {
   if (rows.length === 0) {
     return (
       <div className="empty-block">
-        <p className="empty-title">这里还没有记录</p>
-        <p className="empty-hint">{def.emptyHint}</p>
+        <p className="empty-title">{emptyTitle ?? "这里还没有记录"}</p>
+        <p className="empty-hint">{emptyHint ?? def.emptyHint}</p>
       </div>
     );
   }

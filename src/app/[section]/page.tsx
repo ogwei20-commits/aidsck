@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { ModuleCreateForm, type RefMap } from "@/components/modules/module-client";
 import { ModuleTable } from "@/components/modules/module-table";
+import { ListToolbar } from "@/components/modules/list-toolbar";
 import { FinanceResults } from "@/components/modules/finance-result";
 import { AssistantWorkspace } from "@/components/modules/assistant";
 import { LineageView } from "@/components/modules/lineage";
@@ -9,19 +10,33 @@ import { FileTable } from "@/components/modules/file-table";
 import { ReportExport } from "@/components/modules/report-export";
 import { WorkflowCenter } from "@/components/modules/workflow-center";
 import { AgentRuns } from "@/components/modules/agent-runs";
+import { MilestoneBoard } from "@/components/modules/milestone-board";
 import { getEnv } from "@/lib/config/env";
 import { getModule } from "@/modules/registry";
-import { listRows, refOptions, type Row } from "@/modules/store";
+import { listRowsPaged, refOptions, type PagedRows, type Row } from "@/modules/store";
 import { getWorkflowRun, listWorkflowsWithRuns } from "@/server/ai/workflows/engine";
 import { listRunCenter, type RunCenter } from "@/server/services/agent-runs";
+import { listMilestones, type MilestoneGroup } from "@/server/services/milestones";
 
 export const dynamic = "force-dynamic";
 
-// Next.js 16：动态段 params 是 Promise
-type Ctx = { params: Promise<{ section: string }> };
+// Next.js 16：动态段 params 与 searchParams 都是 Promise
+type Ctx = {
+  params: Promise<{ section: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
 
-export default async function SectionPage({ params }: Ctx) {
+const PAGE_SIZE = 20;
+
+/** 从 query 里取单值字符串，数组（?q=a&q=b）只取第一个 */
+function single(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return value[0] ?? "";
+  return value ?? "";
+}
+
+export default async function SectionPage({ params, searchParams }: Ctx) {
   const { section } = await params;
+  const sp = await searchParams;
   const userId = getEnv().APP_USER_ID;
 
   if (section === "assistant") return <AssistantWorkspace userId={userId} />;
@@ -104,10 +119,15 @@ export default async function SectionPage({ params }: Ctx) {
   const def = getModule(section);
   if (!def) notFound();
 
+  const q = single(sp.q).slice(0, 100);
+  const pageNo = Number(single(sp.page)) || 1;
+
   let rows: Row[] = [];
+  let paged: PagedRows = { rows: [], total: 0, page: 1, pageSize: PAGE_SIZE, totalPages: 1, q };
   let dbError: string | null = null;
   try {
-    rows = await listRows(def, userId);
+    paged = await listRowsPaged(def, userId, { q, page: pageNo, pageSize: PAGE_SIZE });
+    rows = paged.rows;
   } catch (error) {
     dbError = error instanceof Error ? error.message : "数据库读取失败";
   }
@@ -120,6 +140,18 @@ export default async function SectionPage({ params }: Ctx) {
   }
 
   const isFiles = def.slug === "files";
+  const isProjects = def.slug === "projects";
+
+  // 里程碑只属于项目页。单独 try：读不到里程碑不该连项目列表一起打不开
+  let milestones: MilestoneGroup[] = [];
+  if (isProjects) {
+    try {
+      milestones = await listMilestones(userId);
+    } catch (error) {
+      dbError = dbError ?? (error instanceof Error ? error.message : "里程碑读取失败");
+    }
+  }
+
   const fileRows = isFiles
     ? rows.map((r) => ({
         id: String(r.id),
@@ -142,8 +174,8 @@ export default async function SectionPage({ params }: Ctx) {
         </div>
         <div className="page-head-side">
           <div className="count-block">
-            <span className="count-value">{rows.length}</span>
-            <span className="count-label">条记录</span>
+            <span className="count-value">{paged.total}</span>
+            <span className="count-label">{q ? "条匹配" : "条记录"}</span>
           </div>
         </div>
       </header>
@@ -166,6 +198,20 @@ export default async function SectionPage({ params }: Ctx) {
         {isFiles ? <FileUpload /> : <ModuleCreateForm def={def} refs={refs} />}
       </section>
 
+      {/* 项目页多一块里程碑：进度百分比必须来自可验收的节点，而不是手填一个数字 */}
+      {isProjects && (
+        <section className="section">
+          <div className="section-head">
+            <h2><span className="section-index">02 /</span>里程碑</h2>
+            <p>项目进度不是填出来的，是这些节点一条条完成出来的</p>
+          </div>
+          <MilestoneBoard
+            groups={milestones}
+            projects={rows.map((r) => ({ id: String(r.id), name: String(r.name ?? "未命名项目") }))}
+          />
+        </section>
+      )}
+
       {def.slug === "finance" && rows.length > 0 && (
         <section className="section">
           <div className="section-head">
@@ -178,10 +224,35 @@ export default async function SectionPage({ params }: Ctx) {
 
       <section className="section">
         <div className="section-head">
-          <h2><span className="section-index">{def.slug === "finance" ? "03" : "02"} /</span>{isFiles ? "已上传文件" : "全部记录"}</h2>
+          <h2>
+            <span className="section-index">{isProjects || def.slug === "finance" ? "03" : "02"} /</span>
+            {isFiles ? "已上传文件" : "全部记录"}
+          </h2>
           <p>{isFiles ? "下载会校验路径，磁盘缺件时明确报错" : def.scope === "shared" ? "含系统内置项" : "仅当前用户数据"}</p>
         </div>
-        {isFiles ? <FileTable rows={fileRows} /> : <ModuleTable def={def} rows={rows} />}
+        <ListToolbar
+          basePath={`/${def.slug}`}
+          q={paged.q}
+          total={paged.total}
+          page={paged.page}
+          totalPages={paged.totalPages}
+          pageSize={paged.pageSize}
+          itemLabel={def.label.replace(/中心$/, "")}
+        />
+        {isFiles ? (
+          <FileTable rows={fileRows} />
+        ) : (
+          <ModuleTable
+            def={def}
+            rows={rows}
+            emptyTitle={paged.q ? "没有匹配的记录" : undefined}
+            emptyHint={
+              paged.q
+                ? `换个关键词试试。当前搜的是「${def.label}」里的标题、摘要与正文，不含状态值。`
+                : undefined
+            }
+          />
+        )}
       </section>
 
       {def.slug === "reports" && rows.length > 0 && (

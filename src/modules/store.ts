@@ -170,6 +170,105 @@ export async function refOptions(
   return rows.map((r) => ({ value: String(r.id), label: String(r.label ?? "未命名") }));
 }
 
+export interface ListQuery {
+  /** 关键词。空串表示不筛选 */
+  q?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface PagedRows {
+  rows: Row[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  /** 实际生效的关键词（已 trim），页面回显用 */
+  q: string;
+}
+
+/**
+ * 搜索列：只用模块定义里声明过的字段。
+ *
+ * 为什么不「所有文本列都搜」：列名要拼进 SQL 标识符位置，唯一安全的来源
+ * 就是注册表里的字段定义（它们一定对应真实列）。titleField / subtitleField
+ * 优先，因为列表里最显眼的两列命中率最高。
+ */
+function searchColumns(def: ModuleDef): string[] {
+  const declared = new Set(def.fields.map((f) => f.name));
+  const picked: string[] = [];
+  for (const name of [def.titleField, def.subtitleField]) {
+    if (name && declared.has(name) && !picked.includes(name)) picked.push(name);
+  }
+  for (const field of def.fields) {
+    if (picked.length >= 5) break;
+    if (field.kind !== "text" && field.kind !== "textarea") continue;
+    if (!picked.includes(field.name)) picked.push(field.name);
+  }
+  return picked.slice(0, 5);
+}
+
+/**
+ * 关键词转成 LIKE 模式。
+ *
+ * `%` 和 `_` 是 LIKE 的通配符：用户搜「50%」时若不转义，会变成「以 50 开头」，
+ * 搜「a_b」会匹配到「axb」。反斜杠本身也要先转义，否则 `\%` 会被吃掉。
+ */
+export function toLikePattern(q: string): string {
+  return `%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
+}
+
+function searchWhere(def: ModuleDef, q: string): SQL | null {
+  const keyword = q.trim();
+  if (!keyword) return null;
+  const pattern = toLikePattern(keyword);
+  const parts = searchColumns(def).map(
+    (name) => sql`${columnIdent(snake(name))}::text ilike ${pattern}`,
+  );
+  if (parts.length === 0) return null;
+  return sql`(${sql.join(parts, sql` or `)})`;
+}
+
+/**
+ * 带搜索与分页的列表读取。
+ *
+ * 与 `listRows` 分开而不是改签名：`listRows` 被接口和首页等处以数组形状消费，
+ * 改返回形状会连带改一堆调用点；而分页只有列表页需要。
+ *
+ * 总数单独 count 一次，不用「取到的行数」代替——否则第 2 页会显示「共 20 条」。
+ */
+export async function listRowsPaged(def: ModuleDef, userId: string, query: ListQuery = {}): Promise<PagedRows> {
+  const db = getDb();
+  const q = (query.q ?? "").trim().slice(0, 100);
+  const pageSize = Math.min(Math.max(query.pageSize ?? 20, 1), 100);
+  const where = searchWhere(def, q);
+  const scope = scopeWhere(def, userId);
+  const filter = where ? sql`${scope} and ${where}` : scope;
+
+  const countResult = await db.execute(
+    sql`select count(*)::int as n from ${tableIdent(def)} where ${filter}`,
+  );
+  const total = Number((countResult as unknown as Row[])[0]?.n ?? 0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  // 页码越界时夹回最后一页：删到只剩一页后停留在第 3 页，会看到「共 5 条」却是空表
+  const page = Math.min(Math.max(Math.trunc(query.page ?? 1), 1), totalPages);
+
+  const order = def.scope === "global" ? sql`"created_at" desc` : sql`"updated_at" desc`;
+  const result = await db.execute(
+    sql`select * from ${tableIdent(def)} where ${filter} order by ${order}
+        limit ${pageSize} offset ${(page - 1) * pageSize}`,
+  );
+
+  return {
+    rows: (result as unknown as Row[]).map(toCamelRow),
+    total,
+    page,
+    pageSize,
+    totalPages,
+    q,
+  };
+}
+
 /** 模块行数，用于首页与导航角标 */
 export async function countRows(def: ModuleDef, userId: string): Promise<number> {
   const db = getDb();

@@ -23,8 +23,10 @@
 | GET | `/api/v1/audit-logs` | 操作日志查询 | 已实现 |
 | GET / POST | `/api/v1/approvals` | 审批记录列表 / 写入审批决定 | 已实现 |
 | GET | `/api/v1/agents` | Agent 注册定义 + 工具白名单 + Provider 状态 | 已实现 |
-| GET / POST | `/api/v1/modules/:module` | 通用模块列表 / 创建（15 个模块共用） | 已实现 |
+| GET / POST | `/api/v1/modules/:module` | 通用模块列表 / 创建（15 个模块共用）；GET 支持 `?q=` 关键词 | 已实现 |
 | GET / PATCH / DELETE | `/api/v1/modules/:module/:id` | 详情 / 修改 / 删除（删除需审批） | 已实现 |
+| GET / POST | `/api/v1/milestones` | 项目里程碑分组列表 / 新建 | 已实现 |
+| PATCH / DELETE | `/api/v1/milestones/:id` | 完成或重开 / 删除 | 已实现 |
 | POST | `/api/v1/assistant/plan` | AI 总管家拆解目标为任务 | 已实现 |
 
 ### 2.2 执行（2026-11-15 新增，对应 F-08 / F-10）
@@ -239,14 +241,43 @@ GET /api/v1/agent-runs/:id
 两者都回 404 而不是 400/403：不区分「不存在」和「不是你的」，
 避免用 id 探测别人有哪些记录。
 
-## 7. 尚未实现（文档 6 剩余）
+## 7. 项目里程碑与列表查询（P1-8 / P1-9，已实现）
+
+### 7.1 里程碑
+
+| Method | Path | 用途 |
+|---|---|---|
+| GET | `/api/v1/milestones` | 按项目分组的里程碑，带 `total` / `done` |
+| POST | `/api/v1/milestones` | 新建，body `{ projectId, title, dueAt? }` |
+| PATCH | `/api/v1/milestones/:id` | `{ done?: boolean, title?: string }` |
+| DELETE | `/api/v1/milestones/:id` | 删除（里程碑无外部副作用，不走审批） |
+
+约定：
+
+- `dueAt` 只接受 `YYYY-MM-DD`，按 UTC 当日 00:00 存、按 UTC 取日期。不这么做的话，
+  东八区写入的 11-20 会在展示时变成 11-19。
+- `PATCH` 只更新传进来的字段：`done` 缺省时**不动**完成状态。只改标题却把已完成改回未完成，
+  是最容易写错也最难发现的一种副作用。
+- 建到别人的项目上返回 404 `PROJECT_NOT_FOUND`；删除不存在或不属于自己的返回 404 `MILESTONE_NOT_FOUND`。
+
+### 7.2 列表查询
+
+`GET /api/v1/modules/:module?q=关键词` 与列表页共用同一套 LIKE 逻辑：
+
+- 搜索字段只取模块定义里声明过的字段（最多 5 个），保证列名一定存在——列名要拼进
+  标识符位置，唯一安全来源就是注册表。
+- `%` 与 `_` 转义成字面量。不转义时搜「50%」会变成「以 50 开头」，返回一堆莫名结果。
+- 关键词最长 100 字符；响应仍是数组，形状不变，既有消费方不用改。
+- 页面侧每页 20 条，用 `?q=&page=`；页码越界夹到最后一页，而不是给一张空表。
+
+## 8. 尚未实现（文档 6 剩余）
 
 ```
 POST /api/v1/finance/calculate      （独立计算接口；页面内已可算）
 POST /api/v1/approvals/:id/decision （现用 POST /approvals 写入决定）
 ```
 
-## 8. 真实调用示例
+## 9. 真实调用示例
 
 ```bash
 # 健康检查
@@ -296,7 +327,7 @@ curl -s -OJ "http://localhost:3000/api/v1/reports/<reportId>/export?format=md"
 curl -s "http://localhost:3000/api/v1/reports/<reportId>/export?format=html"
 ```
 
-## 9. Next.js 16 注意
+## 10. Next.js 16 注意
 
 动态段 `params` 是 `Promise`，必须 `await ctx.params`；使用原生 `Response.json()`；
 `GET` Route Handler 默认不缓存。代码已按内置版本文档实现，未使用旧版同步 API。

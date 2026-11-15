@@ -10,6 +10,7 @@ import {
   rateSum,
   type FinanceInput,
 } from "@/lib/finance/calc";
+import { BreakEvenChart } from "./break-even-chart";
 
 const money = (n: number) =>
   n.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -154,6 +155,9 @@ export function PriceLadder({ input }: { input: FinanceInput }) {
           还没覆盖 {money(input.fixedCost)} 固定投入。这是量不够，不是定价错了——先别急着涨价。
         </p>
       )}
+
+      {/* 表给具体数字，图给趋势与保本位置。两者共用同一个基准价，改价时同步 */}
+      <BreakEvenChart input={withBase} />
     </div>
   );
 }
