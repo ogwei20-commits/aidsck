@@ -13,16 +13,12 @@ import {
   type ProjectRow,
   type TaskRow,
 } from "@/db/schema";
-
-export interface FinanceSnapshot {
-  name: string;
-  sellPrice: number;
-  unitCost: number;
-  unitProfit: number;
-  margin: number;
-  currency: string;
-  breakEvenUnits: number;
-}
+import {
+  computeFinance,
+  parseFinanceRow,
+  type FinanceInput,
+  type FinanceSnapshot,
+} from "@/lib/finance/calc";
 
 export interface DashboardData {
   pendingTasks: number;
@@ -41,43 +37,12 @@ export interface DashboardData {
   lastActivityAt: Date | null;
 }
 
-export interface FinanceInput {
-  sellPrice: number;
-  purchaseCost: number;
-  shippingCost: number;
-  commissionRate: number;
-  paymentRate: number;
-  adCost: number;
-  otherCost: number;
-  fixedCost: number;
-  expectedOrders: number;
-  currency: string;
-  name: string;
-}
-
 /**
- * 财务口径（必须可复现，前后一致）：
- * 单件总成本 = 采购 + 运费 + 广告 + 单件其他 + 售价 ×(佣金率 + 支付费率)
- * 单件净利   = 售价 − 单件总成本
- * 盈亏平衡单量 = ceil(固定投入 / 单件净利)；固定投入为 0 或利润非正时不下结论（返回 0 并标明）
+ * 财务口径已抽到 `@/lib/finance/calc`：服务端快照、结果卡片、多售价对比
+ * 三处共用一份实现，避免口径漂移。这里保留 re-export，旧引用不用改。
  */
-export function computeFinance(i: FinanceInput): FinanceSnapshot & { monthlyProfit: number } {
-  const rateSum = (i.commissionRate + i.paymentRate) / 100;
-  const unitCost = i.purchaseCost + i.shippingCost + i.adCost + i.otherCost + i.sellPrice * rateSum;
-  const unitProfit = i.sellPrice - unitCost;
-  const margin = i.sellPrice > 0 ? (unitProfit / i.sellPrice) * 100 : 0;
-  const breakEvenUnits = unitProfit > 0 && i.fixedCost > 0 ? Math.ceil(i.fixedCost / unitProfit) : 0;
-  return {
-    name: i.name,
-    sellPrice: i.sellPrice,
-    unitCost,
-    unitProfit,
-    margin,
-    currency: i.currency,
-    breakEvenUnits,
-    monthlyProfit: unitProfit * i.expectedOrders - i.fixedCost,
-  };
-}
+export { computeFinance };
+export type { FinanceInput, FinanceSnapshot };
 
 export function computeSnapshot(row: typeof financeScenarios.$inferSelect) {
   return computeFinance({
@@ -95,22 +60,9 @@ export function computeSnapshot(row: typeof financeScenarios.$inferSelect) {
   });
 }
 
-/** 通用模块列表返回的是 snake_case 原始行，这里做一次适配 */
+/** 通用模块列表返回的是 snake_case 原始行，适配逻辑同样放在 calc 里 */
 export function computeFromRaw(raw: Record<string, unknown>) {
-  const n = (key: string) => Number(raw[key] ?? 0);
-  return computeFinance({
-    name: String(raw.name ?? ""),
-    currency: String(raw.currency ?? "USD"),
-    sellPrice: n("sell_price"),
-    purchaseCost: n("purchase_cost"),
-    shippingCost: n("shipping_cost"),
-    commissionRate: n("commission_rate"),
-    paymentRate: n("payment_rate"),
-    adCost: n("ad_cost"),
-    otherCost: n("other_cost"),
-    fixedCost: n("fixed_cost"),
-    expectedOrders: n("expected_orders"),
-  });
+  return computeFinance(parseFinanceRow(raw));
 }
 
 export async function getDashboardData(userId: string): Promise<DashboardData> {

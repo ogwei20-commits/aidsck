@@ -957,3 +957,101 @@ tbody tr:hover { background: var(--surface-2); }
   .export-actions { width: 100%; }
   .export-actions .btn-mini { flex: 1; text-align: center; padding: 7px 9px; }
 }
+
+/* ── 多售价对比 ───────────────────────────────────────────────
+   设计意图：这张表的主角是「哪一档最赚」和「哪一档开始亏」，
+   所以基准价与最优档用标签点出来，亏损行用左侧色条标出来，
+   而不是让六列数字平均分配注意力。
+   ─────────────────────────────────────────────────────────── */
+.ladder {
+  margin-top: var(--s4);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--line);
+}
+.ladder-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+  flex-wrap: wrap;
+  margin-bottom: var(--s3);
+}
+.ladder-head strong {
+  display: block;
+  font-size: var(--fs-2);
+  font-weight: 640;
+  color: var(--ink);
+  margin-bottom: 2px;
+}
+.ladder-head span {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.65;
+  max-width: 46em;
+}
+.ladder-input {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex: none;
+}
+.ladder-input > span {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ladder-input input {
+  width: 96px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  padding: 5px var(--s2);
+  font-size: var(--fs-2);
+  font-family: var(--font-mono);
+}
+.ladder-input input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.ladder-table { min-width: 520px; }
+.ladder-table th { padding: var(--s2) var(--s3); }
+.ladder-table td { padding: var(--s2) var(--s3); }
+.ladder-table td.mono { color: var(--text); }
+.ladder-table .is-negative { color: var(--danger) !important; }
+.ladder-table tr.is-baseline td { background: var(--accent-soft); }
+.ladder-table tr.is-loss td:first-child { box-shadow: inset 2px 0 0 var(--danger); }
+.ladder-table tr.is-best td:first-child { box-shadow: inset 2px 0 0 var(--ok); }
+
+.ladder-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 2px;
+  font-size: 9px;
+  font-style: normal;
+  font-family: var(--font-sans);
+  letter-spacing: .04em;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  vertical-align: 1px;
+}
+.ladder-tag.is-best { color: var(--ok); border-color: var(--ok); }
+.ladder-tag.is-warn { color: var(--warn); border-color: var(--warn); }
+
+.ladder-scroll-hint { display: none; margin: 0 0 var(--s2); font-size: 11px; color: var(--muted); }
+
+.ladder-note {
+  margin: var(--s3) 0 0;
+  font-size: var(--fs-2);
+  color: var(--text);
+  line-height: 1.75;
+}
+.ladder-note strong { color: var(--ink); font-weight: 660; }
+.ladder-note.is-muted { color: var(--muted); font-size: 11px; }
+
+@media (max-width: 720px) {
+  .ladder-scroll-hint { display: block; }
+  .ladder-head { flex-direction: column; }
+  .ladder-input { width: 100%; justify-content: space-between; }
+  .ladder-input input { width: 110px; }
+}

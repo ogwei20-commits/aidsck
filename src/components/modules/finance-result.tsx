@@ -1,4 +1,5 @@
-import { computeFromRaw } from "@/server/services/dashboard";
+import { computeFinance, parseFinanceRow } from "@/lib/finance/calc";
+import { PriceLadder } from "./price-ladder";
 
 const fmt = (n: number) => n.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -11,7 +12,8 @@ export function FinanceResults({ rows }: { rows: Record<string, unknown>[] }) {
   return (
     <div className="finance-results">
       {rows.map((row) => {
-        const r = computeFromRaw(row);
+        const input = parseFinanceRow(row);
+        const r = computeFinance(input);
         const positive = r.unitProfit > 0;
         return (
           <div className="finance-card" key={String(row.id)}>
@@ -45,13 +47,15 @@ export function FinanceResults({ rows }: { rows: Record<string, unknown>[] }) {
 
             <p className="finance-note">
               {r.breakEvenUnits > 0
-                ? `固定投入 ${fmt(Number(row.fixed_cost ?? 0))} ${r.currency}，按当前单件净利需累计 ${r.breakEvenUnits.toLocaleString("zh-CN")} 单回本。`
+                ? `固定投入 ${fmt(input.fixedCost)} ${r.currency}，按当前单件净利需累计 ${r.breakEvenUnits.toLocaleString("zh-CN")} 单回本。`
                 : "未填固定投入（或单件净利为负），无法给出盈亏平衡点——这一点不猜。"}
             </p>
             <p className="finance-assume">
               口径：售价 −（采购 + 运费 + 单件广告 + 单件其他 + 售价 ×(佣金率 + 支付费率)）。
               假设来自本方案的输入字段，改任一数值即重算。
             </p>
+
+            <PriceLadder input={input} />
           </div>
         );
       })}
