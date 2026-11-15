@@ -102,8 +102,15 @@ export const decideWorkflowSchema = z.object({
   note: z.string().trim().max(2000, "备注最多 2000 个字符").optional().default(""),
 });
 
+/** 续跑：retry 重试失败节点，skip 跳过它继续。跳过必须写原因（服务端另校验长度） */
+export const resumeWorkflowSchema = z.object({
+  action: z.enum(["retry", "skip"]),
+  note: z.string().trim().max(2000, "备注最多 2000 个字符").optional().default(""),
+});
+
 export type StartWorkflowInput = z.infer<typeof startWorkflowSchema>;
 export type DecideWorkflowInput = z.infer<typeof decideWorkflowSchema>;
+export type ResumeWorkflowInput = z.infer<typeof resumeWorkflowSchema>;
 
 export type RunTaskInput = z.infer<typeof runTaskSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;

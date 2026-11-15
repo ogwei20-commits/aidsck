@@ -1055,3 +1055,87 @@ tbody tr:hover { background: var(--surface-2); }
   .ladder-input { width: 100%; justify-content: space-between; }
   .ladder-input input { width: 110px; }
 }
+
+/* ── 中断后续跑 ───────────────────────────────────────────────
+   这一块要跟人工闸门区分开：闸门是「等你决定」，这里是「出问题了」。
+   所以用危险色左条 + 中性底，而不是整块红底——整块红会把失败原因
+   压成一片噪音，反而看不清到底错在哪。
+   两条出路权重不同：重试是正路（primary），跳过会在报告里留缺口（次级 + 必须写原因）。
+   ─────────────────────────────────────────────────────────── */
+.wf-resume {
+  margin-top: var(--s5);
+  padding: var(--s4) var(--s4) var(--s4) var(--s5);
+  background: var(--surface-2);
+  border-left: 3px solid var(--danger);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.wf-resume-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin-bottom: var(--s3);
+}
+.wf-resume-head strong { font-size: var(--fs-3); color: var(--ink); }
+.wf-resume-tag {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  letter-spacing: .06em;
+  padding: 2px 7px;
+  border-radius: 2px;
+  color: var(--danger);
+  border: 1px solid currentColor;
+}
+.wf-resume-count {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--warn);
+}
+
+.wf-resume-error {
+  margin: 0 0 var(--s3);
+  font-size: var(--fs-2);
+  line-height: 1.75;
+  color: var(--text);
+  padding: var(--s3);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  word-break: break-word;
+}
+.wf-resume-error > span {
+  display: inline-block;
+  margin-right: var(--s3);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  letter-spacing: .06em;
+  color: var(--danger);
+  text-transform: uppercase;
+}
+
+.wf-resume-hint { margin: 0 0 var(--s3); font-size: var(--fs-2); color: var(--muted); line-height: 1.7; }
+
+.wf-resume textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  padding: var(--s3);
+  font-size: var(--fs-2);
+  font-family: inherit;
+  line-height: 1.7;
+  resize: vertical;
+}
+.wf-resume textarea:focus { outline: 2px solid var(--danger); outline-offset: -1px; }
+
+/* 这一块里只有一个主操作（重试）。次级按钮一律中性灰——
+   否则两个蓝色按钮并排，人分不出哪个是「推荐的那条路」。 */
+.wf-resume .btn-ghost { color: var(--muted); }
+.wf-resume .btn-ghost:hover { color: var(--ink); border-color: var(--line-strong); }
+.wf-resume .btn-ghost.is-danger,
+.btn-ghost.is-danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.wf-resume .btn-ghost.is-danger:hover,
+.btn-ghost.is-danger:hover { border-color: var(--danger); }
+.btn-ghost.is-danger:disabled { opacity: .45; cursor: not-allowed; }

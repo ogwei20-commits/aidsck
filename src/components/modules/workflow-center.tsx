@@ -19,6 +19,17 @@ interface StepState {
   reason?: string;
   recordId?: string;
   durationMs?: number;
+  attempts?: number;
+  lastError?: { message: string; at: string };
+}
+
+interface ResumeRecord {
+  at: string;
+  stepId: string;
+  stepTitle: string;
+  action: "retry" | "skip";
+  attempt: number;
+  note: string;
 }
 
 interface Definition {
@@ -46,7 +57,13 @@ interface RunResult {
   executed: { stepId: string; title: string; status: StepStatus }[];
   needsHuman: boolean;
   humanAction: string | null;
-  context: { goal: string; projectId?: string; steps: Record<string, StepState>; reportId?: string };
+  context: {
+    goal: string;
+    projectId?: string;
+    steps: Record<string, StepState>;
+    reportId?: string;
+    resumes?: ResumeRecord[];
+  };
   definition: Definition;
   disclaimer: string;
 }
@@ -116,6 +133,8 @@ export function WorkflowCenter({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [openStep, setOpenStep] = useState<string | null>(null);
+  const [resumeNote, setResumeNote] = useState("");
+  const [skipMode, setSkipMode] = useState(false);
 
   const wf = workflows.find((w) => w.slug === active) ?? workflows[0];
   const run = wf ? runs[wf.slug] ?? null : null;
@@ -124,6 +143,22 @@ export function WorkflowCenter({
   const waitingKind = currentStep?.kind;
   const currentIndex = def && run?.currentNode ? def.steps.findIndex((s) => s.id === run.currentNode) + 1 : 0;
   const stepLabel = currentIndex > 0 ? `第 ${currentIndex} / ${def?.steps.length} 步 · ` : "";
+
+  // 中断后要续跑：找出失败节点、它试过几次、前面完成了多少
+  const failedStepId = run
+    ? (Object.entries(run.context.steps).find(([, s]) => s.status === "failed")?.[0] ?? null)
+    : null;
+  const failedStep = def && failedStepId ? (def.steps.find((s) => s.id === failedStepId) ?? null) : null;
+  const failedState = failedStepId ? run?.context.steps[failedStepId] : undefined;
+  const failedIndex = def && failedStep ? def.steps.findIndex((s) => s.id === failedStep.id) + 1 : 0;
+  const attempts = failedState?.attempts ?? 1;
+  const doneCount = run && def
+    ? def.steps.filter((s) => {
+        const st = run.context.steps[s.id]?.status;
+        return st === "succeeded" || st === "skipped";
+      }).length
+    : 0;
+  const resumeCount = run?.context.resumes?.length ?? 0;
 
   function apply(next: RunResult) {
     setRuns((prev) => ({ ...prev, [next.workflowSlug]: next }));
@@ -174,6 +209,24 @@ export function WorkflowCenter({
       return;
     }
     apply(result.data);
+  }
+
+  async function resume(action: "retry" | "skip") {
+    if (!run) return;
+    setBusy(true);
+    setError("");
+    const result = await call<RunResult>(`/api/v1/workflow-runs/${run.runId}/resume`, "POST", {
+      action,
+      note: resumeNote,
+    });
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.error.message);
+      return;
+    }
+    apply(result.data);
+    setResumeNote("");
+    setSkipMode(false);
   }
 
   if (!wf) {
@@ -257,6 +310,84 @@ export function WorkflowCenter({
             </div>
             {!wf.definitionValid && (
               <p className="form-error">该工作流定义不合法，启动会被拒绝。请检查 workflows.definition。</p>
+            )}
+          </div>
+        )}
+
+        {run && run.status === "failed" && failedStep && (
+          <div className="wf-resume">
+            <div className="wf-resume-head">
+              <span className="wf-resume-tag">
+                第 {failedIndex} / {def?.steps.length} 步中断
+              </span>
+              <strong>{failedStep.title}</strong>
+              {attempts > 1 && <span className="wf-resume-count">已执行 {attempts} 次</span>}
+            </div>
+
+            <p className="wf-resume-error">
+              <span>失败原因</span>
+              {failedState?.note || "这一步没有留下错误信息，只有状态是失败"}
+            </p>
+
+            <p className="wf-resume-hint">
+              前面 {doneCount} 个节点已完成，续跑从这一步开始，不会重跑它们。
+              {resumeCount > 0 && ` 这条运行已经被续过 ${resumeCount} 次。`}
+            </p>
+
+            {skipMode ? (
+              <>
+                <textarea
+                  value={resumeNote}
+                  maxLength={2000}
+                  rows={3}
+                  placeholder="为什么跳过这一步（至少 4 个字）。跳过意味着最终报告里这一步没有产出，事后只能靠这句话看出原因。"
+                  onChange={(e) => setResumeNote(e.target.value)}
+                  disabled={busy}
+                />
+                <div className="wf-gate-actions">
+                  <button
+                    className="btn-ghost is-danger"
+                    type="button"
+                    onClick={() => void resume("skip")}
+                    disabled={busy || resumeNote.trim().length < 4}
+                  >
+                    {busy ? "处理中…" : "确认跳过并继续"}
+                  </button>
+                  <button
+                    className="btn-ghost"
+                    type="button"
+                    onClick={() => {
+                      setSkipMode(false);
+                      setResumeNote("");
+                    }}
+                    disabled={busy}
+                  >
+                    取消
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="wf-gate-actions">
+                <button className="btn-primary" type="button" onClick={() => void resume("retry")} disabled={busy}>
+                  {busy ? "重试中…" : "修好了，重试这一步"}
+                </button>
+                <button
+                  className="btn-ghost"
+                  type="button"
+                  onClick={() => {
+                    setSkipMode(true);
+                    setError("");
+                  }}
+                  disabled={busy}
+                >
+                  跳过这一步
+                </button>
+                <span className="wf-gate-hint">
+                  {failedStep.kind === "gate"
+                    ? "人工闸门不能跳过，只能重试或驳回整条运行。"
+                    : "重试只重跑这一步；跳过要在最终报告里留一个缺口。"}
+                </span>
+              </div>
             )}
           </div>
         )}
@@ -358,6 +489,9 @@ export function WorkflowCenter({
                       <span className={`wf-kind is-${step.kind}`}>{KIND_LABEL[step.kind]}</span>
                       <span className={`wf-state is-${status}`}>{statusText}</span>
                       {state?.mode === "framework" && <span className="wf-flag">框架产出</span>}
+                      {state?.attempts && state.attempts > 1 && (
+                        <span className="wf-flag">第 {state.attempts} 次执行</span>
+                      )}
                     </div>
                     <p className="wf-desc">{step.description}</p>
 
@@ -365,8 +499,15 @@ export function WorkflowCenter({
                       <p className="wf-skip-note">未执行原因：{state.reason}</p>
                     )}
 
-                    {state?.note && status === "failed" && (
-                      <p className="wf-skip-note">中断原因：{state.note}</p>
+                    {status === "failed" && (state?.lastError?.message || state?.note) && (
+                      <p className="wf-skip-note">中断原因：{state.lastError?.message ?? state.note}</p>
+                    )}
+
+                    {/* skipped 的原因里已经带了「原失败」，再显示一遍就是重复 */}
+                    {state?.lastError && status !== "failed" && status !== "skipped" && (
+                      <p className="wf-skip-note">
+                        上次失败：{state.lastError.message}
+                      </p>
                     )}
 
                     {state?.issues && state.issues.length > 0 && (

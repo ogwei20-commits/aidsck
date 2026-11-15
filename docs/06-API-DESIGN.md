@@ -93,6 +93,7 @@
 | GET | `/api/v1/workflow-runs/:id` | 读运行状态，**不推进** |
 | POST | `/api/v1/workflow-runs/:id/advance` | 推进到下一个停点（人工节点 / 闸门 / 失败 / 结束） |
 | POST | `/api/v1/workflow-runs/:id/decide` | `{"decision":"approve"\|"reject","note":"..."}` |
+| POST | `/api/v1/workflow-runs/:id/resume` | `{"action":"retry"\|"skip","note":"..."}` 中断后从失败节点续跑（见 4.5） |
 
 **启动请求体**：
 
@@ -162,14 +163,53 @@
 `javascript:` 等协议直接退化为纯文本。报告正文来自 Agent 产出与用户输入，
 这一步是 XSS 的唯一防线。
 
-## 5. 尚未实现（文档 6 剩余）
+## 5. 中断后续跑（P0-5，已实现）
+
+运行中断（`status=failed`）后，从失败的那个节点接着走，前面已完成的节点不重跑。
+
+```
+POST /api/v1/workflow-runs/:id/resume
+{ "action": "retry" | "skip", "note": "原因（skip 必填，至少 4 个字）" }
+```
+
+| action | 语义 | 产出 |
+|---|---|---|
+| `retry` | 失败原因已修复，重跑这一步 | 节点状态回到 `pending` 后被重新执行；`attempts` +1 |
+| `skip` | 这一步确实跑不通，标为未执行后继续 | 节点 `skipped`，`reason` 写「人工跳过：<原因>（原失败：<错误>）」 |
+
+**三种不允许**，都是刻意的：
+
+| HTTP | code | 触发条件 | 为什么 |
+|---|---|---|---|
+| 409 | `RUN_NOT_RESUMABLE` | 运行状态不是 `failed` | 只有中断才有「从哪儿接着跑」的问题 |
+| 409 | `WORKFLOW_DEFINITION_CHANGED` | 启动后流程定义被改过（节点增删或改执行者） | 接着跑会按新顺序执行旧上下文，产出归属全乱；宁可重开一条 |
+| 409 | `GATE_CANNOT_SKIP` | 对人工闸门用 `skip` | 闸门存在的前提就是不可绕过 |
+| 409 | `RESUME_LIMIT_REACHED` | 同一步已重试 3 次仍失败 | 无限重试只会把同样的错重复三遍 |
+| 400 | `RESUME_NOTE_REQUIRED` | `skip` 时原因少于 4 个字 | 跳过会在最终报告里留缺口，必须留下可追溯的理由 |
+
+**幂等保证**（续跑最容易出错的地方）：
+
+- `agent` 节点重试**复用同一条任务**，不新建——否则任务页出现两条同名任务，执行记录被拆到两处
+- `report` 节点重试**覆盖写同一条报告**，报告 ID 与导出链接不变
+- `archive` 节点重试**覆盖写同一条知识库条目**
+- 失败时即便任务已建、记录已落库，也把 `taskId` / `recordId` 挂在节点上，续跑才接得住
+
+**响应体**：与 `advance` 相同（`AdvanceResult`）。续跑历史在 `context.resumes[]`：
+
+```json
+"resumes": [{ "at": "...", "stepId": "s3", "stepTitle": "竞品与需求核对", "action": "retry", "attempt": 2, "note": "Agent 已重新启用" }]
+```
+
+节点上另有 `attempts`（已执行次数）与 `lastError`（上次失败原因，续跑后仍保留，便于事后核对）。
+
+## 6. 尚未实现（文档 6 剩余）
 
 ```
 POST /api/v1/finance/calculate      （独立计算接口；页面内已可算）
 POST /api/v1/approvals/:id/decision （现用 POST /approvals 写入决定）
 ```
 
-## 6. 真实调用示例
+## 7. 真实调用示例
 
 ```bash
 # 健康检查
@@ -201,6 +241,14 @@ curl -s -X POST http://localhost:3000/api/v1/workflow-runs/<runId>/advance
 curl -s -X POST http://localhost:3000/api/v1/workflow-runs/<runId>/decide \
   -H "Content-Type: application/json" -d '{"decision":"approve","note":"同意进入打样"}'
 
+# 中断后重试失败节点（前面已完成的节点不会重跑）
+curl -s -X POST http://localhost:3000/api/v1/workflow-runs/<runId>/resume \
+  -H "Content-Type: application/json" -d '{"action":"retry","note":"Agent 已重新启用"}'
+
+# 跳过跑不通的节点（必须写原因，至少 4 个字）
+curl -s -X POST http://localhost:3000/api/v1/workflow-runs/<runId>/resume \
+  -H "Content-Type: application/json" -d '{"action":"skip","note":"该数据源已下线，本次跳过"}'
+
 # 导出报告（-OJ 按服务端给的文件名保存，中文名不乱码）
 curl -s -OJ "http://localhost:3000/api/v1/reports/<reportId>/export?format=md"
 
@@ -208,7 +256,7 @@ curl -s -OJ "http://localhost:3000/api/v1/reports/<reportId>/export?format=md"
 curl -s "http://localhost:3000/api/v1/reports/<reportId>/export?format=html"
 ```
 
-## 7. Next.js 16 注意
+## 8. Next.js 16 注意
 
 动态段 `params` 是 `Promise`，必须 `await ctx.params`；使用原生 `Response.json()`；
 `GET` Route Handler 默认不缓存。代码已按内置版本文档实现，未使用旧版同步 API。

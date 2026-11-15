@@ -91,6 +91,10 @@ export interface StepState {
   reason?: string;
   /** report / archive 节点落库后的记录 ID */
   recordId?: string;
+  /** 已执行次数（首次为 1）。续跑重试会 +1，用于限制无限重试 */
+  attempts?: number;
+  /** 上一次失败的原因。续跑后仍保留，便于事后核对「这一步曾经怎么挂的」 */
+  lastError?: { message: string; at: string };
 }
 
 export interface WorkflowLogEntry {
@@ -111,6 +115,10 @@ export interface WorkflowContext {
   /** 生成报告后的 Markdown 正文，供归档与导出复用 */
   reportBody?: string;
   reportId?: string;
+  /** 启动时的定义指纹：续跑前比对，定义变过就不许接着跑 */
+  definitionDigest?: string;
+  /** 续跑历史（重试 / 跳过），一条运行被续过几次、为什么 */
+  resumes?: ResumeRecord[];
 }
 
 /** 推进结果：告诉调用方停在哪、为什么停 */
@@ -130,6 +138,10 @@ export interface AdvanceResult {
   definition: WorkflowDefinition;
   disclaimer: string;
 }
+
+/** 续跑记录类型定义在 resume.ts；这里做类型引入与再导出（type-only，不产生运行时依赖） */
+import type { ResumeRecord } from "./resume";
+export type { ResumeRecord, ResumeAction } from "./resume";
 
 export const NO_MODEL_DISCLAIMER =
   "当前未接入任何 AI 模型（AI_PROVIDER=none）。流程中的 Agent 节点产出为内置研究框架，不含研究结论，不产生费用；框架是真执行，但不是模型推理。";

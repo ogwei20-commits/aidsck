@@ -4,6 +4,7 @@ import { tasks, workflowRuns, workflows } from "@/db/schema";
 import { AppError } from "@/lib/errors/api";
 import { writeAudit } from "@/server/audit/logger";
 import { parseDefinition } from "./definitions";
+import { appendResume, checkResumable, definitionDigest, prepareRetry, prepareSkip, type ResumeAction } from "./resume";
 import { runStep } from "./step-runner";
 import {
   NO_MODEL_DISCLAIMER,
@@ -40,6 +41,8 @@ function toContext(raw: unknown): WorkflowContext {
     log: Array.isArray(ctx.log) ? ctx.log : [],
     reportBody: ctx.reportBody,
     reportId: ctx.reportId,
+    definitionDigest: typeof ctx.definitionDigest === "string" ? ctx.definitionDigest : undefined,
+    resumes: Array.isArray(ctx.resumes) ? ctx.resumes : undefined,
   };
 }
 
@@ -92,6 +95,8 @@ export async function startWorkflowRun(
     projectId: options.projectId,
     steps: {},
     log: [],
+    // 记下启动时的定义形状；失败后要续跑时先比对，定义变过就不许接着跑
+    definitionDigest: definitionDigest(def),
   };
   for (const step of def.steps) ctx.steps[step.id] = { status: "pending" };
 
@@ -208,7 +213,12 @@ export async function advanceWorkflowRun(userId: string, runId: string): Promise
         break;
       }
 
-      ctx.steps[step.id] = { status: "running", startedAt: new Date().toISOString() };
+      // 合并而不是替换：续跑重试要保住上一次留下的 taskId / recordId / attempts
+      ctx.steps[step.id] = {
+        ...(ctx.steps[step.id] ?? {}),
+        status: "running",
+        startedAt: new Date().toISOString(),
+      };
       await persist(step.id, "running");
 
       const result = await runStep({
@@ -221,7 +231,8 @@ export async function advanceWorkflowRun(userId: string, runId: string): Promise
         step,
       });
 
-      ctx.steps[step.id] = result.state;
+      // 合并而不是替换：attempts、lastError 这类「跨次执行」的信息要留住
+      ctx.steps[step.id] = { ...(ctx.steps[step.id] ?? {}), ...result.state };
       executed.push({ stepId: step.id, title: step.title, status: result.state.status });
       pushLog(
         ctx,
@@ -420,6 +431,104 @@ export async function decideWorkflowRun(
   return advanceWorkflowRun(userId, run.id);
 }
 
+/**
+ * 续跑：运行中断（failed）后，从失败的那个节点接着走。
+ *
+ * 两种处理方式，语义完全不同，不能混成一个「重试」按钮：
+ * - retry：失败原因已修复，重跑这一步。**前面已完成的节点一律不重跑**。
+ * - skip：这一步确实跑不通（或无关紧要），标为未执行并写清原因，继续后面。
+ *
+ * 三条硬约束：
+ * 1. 只有 failed 的运行能续跑；queued / succeeded / cancelled 一律拒绝。
+ * 2. 流程定义在启动后被改过，就拒绝续跑——错位执行比不执行更糟。
+ * 3. 人工闸门不许用 skip 绕过；跳过必须写明原因。
+ */
+export async function resumeWorkflowRun(
+  userId: string,
+  runId: string,
+  action: ResumeAction,
+  note = "",
+): Promise<AdvanceResult> {
+  const db = getDb();
+  const [run] = await db
+    .select()
+    .from(workflowRuns)
+    .where(and(eq(workflowRuns.id, runId), eq(workflowRuns.userId, userId)))
+    .limit(1);
+  if (!run) throw new AppError("RUN_NOT_FOUND", "运行记录不存在或不属于当前用户", 404);
+
+  const wf = await loadWorkflow(run.workflowId);
+  const def = safeParse(wf.definition, wf.name);
+  const ctx = toContext(run.context);
+  for (const step of def.steps) if (!ctx.steps[step.id]) ctx.steps[step.id] = { status: "pending" };
+
+  const check = checkResumable({ def, ctx, runStatus: run.status, action, note });
+  if (!check.ok) throw new AppError(check.code, check.message, check.status);
+
+  const { step } = check.failed;
+  const before = ctx.steps[step.id];
+  const attempt = (before.attempts ?? 1) + (action === "retry" ? 1 : 0);
+
+  ctx.steps[step.id] = action === "retry" ? prepareRetry(before) : prepareSkip(step, before, note);
+  ctx.resumes = appendResume(ctx, {
+    at: new Date().toISOString(),
+    stepId: step.id,
+    stepTitle: step.title,
+    action,
+    attempt,
+    note: note.trim(),
+  });
+
+  pushLog(
+    ctx,
+    step.id,
+    action === "retry" ? "warn" : "info",
+    action === "retry"
+      ? `续跑：重试「${step.title}」（第 ${attempt} 次执行）${note ? `，原因：${note}` : ""}`
+      : `续跑：跳过「${step.title}」，原因：${note.trim()}`,
+  );
+
+  // 条件更新防并发：两个请求同时点续跑，只有一个能把 failed 改成 queued
+  const claimed = await db
+    .update(workflowRuns)
+    .set({
+      status: "queued",
+      context: ctx as unknown as Record<string, unknown>,
+      // 运行重新开始了，结束时间必须清掉，否则列表页会显示「已结束」却又在跑
+      finishedAt: null,
+    })
+    .where(
+      and(
+        eq(workflowRuns.id, run.id),
+        eq(workflowRuns.userId, userId),
+        eq(workflowRuns.status, "failed"),
+      ),
+    )
+    .returning({ id: workflowRuns.id });
+
+  if (claimed.length === 0) {
+    throw new AppError("RUN_BUSY", "另一个请求已经在处理这条运行，请刷新后查看结果", 409);
+  }
+
+  await writeAudit(db, {
+    userId,
+    action: "resume",
+    entityType: "workflow_run",
+    entityId: run.id,
+    permissionLevel: "L2",
+    detail: {
+      workflow: wf.slug,
+      step: step.id,
+      stepTitle: step.title,
+      action,
+      attempt,
+      note: note.slice(0, 200),
+    },
+  });
+
+  return advanceWorkflowRun(userId, run.id);
+}
+
 function buildResult(input: {
   runId: string;
   wf: WorkflowRow;
@@ -431,8 +540,15 @@ function buildResult(input: {
   humanAction: string | null;
 }): AdvanceResult {
   const { runId, wf, def, ctx, status, executed, needsHuman, humanAction } = input;
+  // 失败或驳回时，焦点必须是出问题的那个节点——否则调用方看到的是「下一步是 S3」，
+  // 而真正需要处理的是失败的 S2，提示会指向错误的地方。
+  const stuckId =
+    status === "failed" || status === "cancelled"
+      ? Object.entries(ctx.steps).find(([, s]) => s.status === "failed")?.[0]
+      : undefined;
   const waitingId =
     Object.entries(ctx.steps).find(([, s]) => s.status === "waiting")?.[0] ??
+    stuckId ??
     firstPending(def, ctx)?.id ??
     null;
   const currentNodeTitle = waitingId

@@ -69,7 +69,7 @@ export async function runStep(input: RunStepInput): Promise<RunStepOutput> {
         humanAction: `${step.description} 通过后，本次流程创建的所有节点任务会一并标记完成。`,
       };
     case "archive":
-      return runArchiveStep({ userId, workflowName, workflowSlug, def, ctx, started });
+      return runArchiveStep({ userId, workflowName, workflowSlug, def, ctx, step, started });
     case "deferred":
       return {
         state: {
@@ -199,14 +199,31 @@ async function runAgentStep(input: {
   }
   const db = getDb();
   const title = `${step.taskTitle ?? step.title}`.slice(0, 200);
+  const attempts = ctx.steps[step.id]?.attempts ?? 1;
 
-  const task = await createTask(userId, {
-    title,
-    projectId: ctx.projectId ?? null,
-    priority: 2,
-    source: "workflow",
-    dataType: "U",
-  });
+  // 续跑重试：上次留下了任务就复用，不新建——否则任务页会出现两条同名任务，
+  // 执行记录也被拆到两处，看不出「这是同一步的第二次执行」。
+  const previousTaskId = ctx.steps[step.id]?.taskId;
+  let taskId: string | null = null;
+  if (previousTaskId) {
+    const [exists] = await db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(and(eq(tasks.id, previousTaskId), eq(tasks.userId, userId)))
+      .limit(1);
+    taskId = exists?.id ?? null;
+  }
+
+  if (!taskId) {
+    const task = await createTask(userId, {
+      title,
+      projectId: ctx.projectId ?? null,
+      priority: 2,
+      source: "workflow",
+      dataType: "U",
+    });
+    taskId = task.id;
+  }
 
   await db
     .update(tasks)
@@ -215,26 +232,34 @@ async function runAgentStep(input: {
         step.description,
         step.acceptance ? `验收标准：${step.acceptance}` : "",
         `来源：工作流运行 ${runId}`,
+        attempts > 1 ? `第 ${attempts} 次执行（前一次中断后续跑重试，任务复用同一条）` : "",
       ]
         .filter(Boolean)
         .join("\n")
         .slice(0, 2000),
     })
-    .where(eq(tasks.id, task.id));
+    .where(eq(tasks.id, taskId));
 
-  const result = await executeTask({
-    userId,
-    taskId: task.id,
-    agentSlug: step.agentSlug,
-    trigger: `workflow.${workflowSlug}.${step.id}`,
-  });
+  let result;
+  try {
+    result = await executeTask({
+      userId,
+      taskId,
+      agentSlug: step.agentSlug,
+      trigger: `workflow.${workflowSlug}.${step.id}`,
+    });
+  } catch (error) {
+    // 任务已经建出来了，执行却失败：把 taskId 挂回节点，续跑才不会又建一条同名任务
+    ctx.steps[step.id] = { ...(ctx.steps[step.id] ?? {}), taskId };
+    throw error;
+  }
 
   return {
     state: {
       ...started,
       status: "succeeded",
       output: result.output,
-      taskId: task.id,
+      taskId,
       runId: result.runId,
       mode: result.mode,
       issues: result.quality.pass ? undefined : result.quality.issues,
@@ -301,6 +326,35 @@ async function runReportStep(input: {
     generatedAt,
   });
 
+  // 续跑重试时这条报告可能已经插入成功（例如插入后写审计才失败）。
+  // 此时覆盖同一条记录，而不是再插一条——导出链接与报告 ID 都不会变。
+  const previousId = ctx.reportId;
+  if (previousId) {
+    const [existing] = await db
+      .select({ id: reports.id })
+      .from(reports)
+      .where(and(eq(reports.id, previousId), eq(reports.userId, userId)))
+      .limit(1);
+    if (existing) {
+      await db
+        .update(reports)
+        .set({ title: title.slice(0, 200), summary, body, projectId: ctx.projectId ?? null, updatedAt: new Date() })
+        .where(eq(reports.id, existing.id));
+
+      ctx.reportBody = body;
+
+      return {
+        state: {
+          ...started,
+          status: "succeeded",
+          output: `${body}\n\n（报告已覆盖更新：${existing.id}；上次运行已生成这条记录，本次没有产生第二条）`,
+          recordId: existing.id,
+          finishedAt: new Date().toISOString(),
+        },
+      };
+    }
+  }
+
   const [report] = await db
     .insert(reports)
     .values({
@@ -345,9 +399,10 @@ async function runArchiveStep(input: {
   workflowSlug: string;
   def: WorkflowDefinition;
   ctx: WorkflowContext;
+  step: WorkflowStep;
   started: { startedAt: string };
 }): Promise<RunStepOutput> {
-  const { userId, workflowName, workflowSlug, def, ctx, started } = input;
+  const { userId, workflowName, workflowSlug, def, ctx, step, started } = input;
   const db = getDb();
 
   // 有报告就归档报告；没有报告节点（如选品验证）就归档前序产出汇总，并标明来源
@@ -365,11 +420,38 @@ async function runArchiveStep(input: {
   }
 
   const dateLabel = new Date().toLocaleDateString("zh-CN");
+  const title = `${workflowName} · ${dateLabel}`.slice(0, 200);
+
+  // 续跑重试：上次已归档过就更新那一条，不重复写入知识库
+  const previousId = ctx.steps[step.id]?.recordId;
+  if (previousId) {
+    const [existing] = await db
+      .select({ id: knowledgeItems.id })
+      .from(knowledgeItems)
+      .where(and(eq(knowledgeItems.id, previousId), eq(knowledgeItems.userId, userId)))
+      .limit(1);
+    if (existing) {
+      await db
+        .update(knowledgeItems)
+        .set({ title, body, updatedAt: new Date() })
+        .where(eq(knowledgeItems.id, existing.id));
+      return {
+        state: {
+          ...started,
+          status: "succeeded",
+          output: `已更新知识库条目：${existing.id}（上次运行已归档，本次覆盖同一条，没有重复写入）`,
+          recordId: existing.id,
+          finishedAt: new Date().toISOString(),
+        },
+      };
+    }
+  }
+
   const [item] = await db
     .insert(knowledgeItems)
     .values({
       userId,
-      title: `${workflowName} · ${dateLabel}`.slice(0, 200),
+      title,
       body,
       category: "工作流产出",
       tags: workflowSlug,
@@ -378,14 +460,20 @@ async function runArchiveStep(input: {
     })
     .returning({ id: knowledgeItems.id });
 
-  await writeAudit(db, {
-    userId,
-    action: "create",
-    entityType: "knowledge_item",
-    entityId: item.id,
-    permissionLevel: "L2",
-    detail: { workflow: workflowName, source: "workflow" },
-  });
+  try {
+    await writeAudit(db, {
+      userId,
+      action: "create",
+      entityType: "knowledge_item",
+      entityId: item.id,
+      permissionLevel: "L2",
+      detail: { workflow: workflowName, source: "workflow" },
+    });
+  } catch (error) {
+    // 条目已写入、审计没写成功：把 recordId 留下，续跑时覆盖这条而不是再插一条
+    ctx.steps[step.id] = { ...(ctx.steps[step.id] ?? {}), recordId: item.id };
+    throw error;
+  }
 
   return {
     state: {
