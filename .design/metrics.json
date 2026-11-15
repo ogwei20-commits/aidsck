@@ -1,0 +1,53 @@
+{
+  "1440": {
+    "h1Text": "今天有 3 件事等你处理",
+    "h1Lines": 1,
+    "h1FontSizePx": 48,
+    "viewportWidth": 1440,
+    "heroWidth": 1192,
+    "horizontalOverflow": false,
+    "sectionCount": 5,
+    "sectionsWithoutTitle": 0,
+    "distinctLeftEdges": 1,
+    "distinctRightEdges": 1,
+    "sidebarWidth": 248,
+    "tableRows": 6,
+    "inlineSvgCount": 23,
+    "accentPixelPercent": 0.57,
+    "sidebarPercentOfViewport": 17.2
+  },
+  "834": {
+    "h1Text": "今天有 3 件事等你处理",
+    "h1Lines": 1,
+    "h1FontSizePx": 30,
+    "viewportWidth": 834,
+    "heroWidth": 834,
+    "horizontalOverflow": false,
+    "sectionCount": 5,
+    "sectionsWithoutTitle": 0,
+    "distinctLeftEdges": 1,
+    "distinctRightEdges": 1,
+    "sidebarWidth": 834,
+    "tableRows": 6,
+    "inlineSvgCount": 23,
+    "accentPixelPercent": 0.7,
+    "sidebarPercentOfViewport": 100.0
+  },
+  "375": {
+    "h1Text": "今天有 3 件事等你处理",
+    "h1Lines": 1,
+    "h1FontSizePx": 24,
+    "viewportWidth": 375,
+    "heroWidth": 375,
+    "horizontalOverflow": false,
+    "sectionCount": 5,
+    "sectionsWithoutTitle": 0,
+    "distinctLeftEdges": 1,
+    "distinctRightEdges": 1,
+    "sidebarWidth": 375,
+    "tableRows": 6,
+    "inlineSvgCount": 23,
+    "accentPixelPercent": 5.9,
+    "sidebarPercentOfViewport": 100.0
+  }
+}
