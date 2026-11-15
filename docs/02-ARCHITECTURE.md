@@ -18,7 +18,18 @@ Route Handlers /api/v1/*  ← Zod 校验 + 统一错误响应 + 权限检查 + �
   ↓
 Drizzle ORM → PostgreSQL 16（本机） / 本地文件存储（后续）
   ↓
-AI 协调层（Provider / Agent Registry / Tool Registry，S4 启用调度）
+AI 协调层
+  ├─ Provider（none / mock / openai-compatible）
+  ├─ Agent Registry（6 个角色 + 权限 + 上限）
+  ├─ Orchestrator
+  │    ├─ planner     目标 → 步骤（规则模板）
+  │    ├─ dispatcher  步骤 → 逐条派发（失败隔离）
+  │    └─ executor    单任务执行 → 产出 / 质量检查 / 落库
+  └─ Workflows
+       ├─ definitions  3 条内置流程 / 9 种节点
+       ├─ engine       状态机与原子占位
+       ├─ step-runner  节点真实行为
+       └─ resume       失败重试 / 跳过
 ```
 
 ## 2. 技术栈（实际安装版本，已写入 package-lock.json）
@@ -46,7 +57,8 @@ app/(页面、路由) → components → server/services → db
                           ↘ types
 ```
 
-下层不得 import 上层。`src/modules/` 为后续业务模块预留，当前只有目录骨架。
+下层不得 import 上层。`src/modules/` 是「数据形状 + 表单字段 + 列表列」的注册表（19 个模块定义），
+通用页面与 CRUD 内核由它驱动，新增模块只需加一份定义。
 
 ## 4. 关键架构决定（代劳表）
 
@@ -58,11 +70,16 @@ app/(页面、路由) → components → server/services → db
 | 数据库连接 | 懒连接 `getDb()` | build 阶段不连库，未配置时明确提示 | 低 |
 | 首页渲染 | `force-dynamic` | 数据实时来自数据库，不预渲染假数据 | 低 |
 | AI 接入 | 仅接口 + 未配置提示 + mock | 未经批准不得接付费 API | 低 |
-| 审批 | 复用 `audit_logs` 记录 | Sprint 1 不提前建完整审批表 | 中（S4 需迁表） |
+| 审批 | 复用 `audit_logs` 记录 | 不提前建完整审批流 | 中（需迁到 `approvals` 表） |
+| 调度方式 | 同步执行（单批 ≤6 条） | 框架/模拟模式毫秒级，无需队列 | 中（接真模型必须改后台队列） |
+| 图表 | 纯 SVG 手绘 | 只两种图（保本线、进度条），引图表库不划算 | 低 |
+| 来源归属 | 挂报告，不挂任意结论 | 报告是唯一有稳定引用位置与导出位置的实体 | 低 |
+| 错误提示 | 服务层翻译成人话 | 页面上不出现 SQL 与堆栈，原始错误进日志 | 低 |
 
 ## 5. 后续扩展点
 
-- `src/server/ai/orchestrator/`：S4 调度器
-- `src/db/schema/`：S2 起按迁移分批加表
-- `src/modules/*`：S3 起填充业务模块
-- 向量检索、云端托管数据库、对象存储：Phase 2 评估
+- 任务队列：工作流定时/触发运行、总管家异步派发，都依赖它
+- 向量检索：`file_chunks` 表已建，未接 embedding 与检索
+- 汇率换算：`currency_rates` 表已建，未接页面
+- 认证与多用户：`user_id` 已在所有业务表，缺的是身份校验
+- 云端托管数据库、对象存储：本地文件存储之上再评估

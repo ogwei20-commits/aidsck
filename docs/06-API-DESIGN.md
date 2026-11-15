@@ -270,14 +270,65 @@ GET /api/v1/agent-runs/:id
 - 关键词最长 100 字符；响应仍是数组，形状不变，既有消费方不用改。
 - 页面侧每页 20 条，用 `?q=&page=`；页码越界夹到最后一页，而不是给一张空表。
 
-## 8. 尚未实现（文档 6 剩余）
+## 8. 财务计算与证据关联（2026-11-15 新增）
+
+### 8.1 财务计算
+
+`POST /api/v1/finance/calculate`
+
+纯计算，不写库。口径与页面、Agent 共用 `src/lib/finance/calc.ts`，不允许各写一份。
+
+请求（字段全可省，缺省按 0）：
+
+```json
+{
+  "name": "冻干零食 19.9",
+  "currency": "USD",
+  "sellPrice": 19.9,
+  "purchaseCost": 6,
+  "shippingCost": 2.5,
+  "commissionRate": 15,
+  "paymentRate": 2.9,
+  "adCost": 1.2,
+  "otherCost": 0.5,
+  "fixedCost": 2000,
+  "expectedOrders": 150,
+  "prices": [18, 19, 19.9, 21, 22]
+}
+```
+
+响应要点：
+
+- `snapshot`：`unitCost` / `unitProfit` / `margin` / `breakEvenUnits` / `monthlyProfit`，保留 4 位小数
+- `ladder`：五档对比（`prices` 缺省时按基准价 ±5%/±10% 生成），含 `minViablePrice` / `bestPrice` / `marginalPerUnit`
+- `breakEvenPrice`、`marginalProfitPerUnit`、`totalRatePercent` 单独给一份，调用方不必理解 ladder 结构
+- `mode: "deterministic"`：明确这是公式计算，不含模型推断
+
+错误：费率 >100、金额为负、单量为小数或负数、档位超过 9 个 → 422，`details.fields` 指明字段。
+
+### 8.2 证据关联
+
+| Method | Path | 用途 |
+|---|---|---|
+| GET | `/api/v1/citations?reportId=` | 来源清单；不传 `reportId` 时返回全部并附 `reportOptions`（含每份报告已有条数） |
+| POST | `/api/v1/citations` | 登记来源，body `{ reportId, sourceTitle, sourceUrl?, quote?, dataType? }` |
+| DELETE | `/api/v1/citations/:id` | 删除来源 |
+
+约定：
+
+- `sourceUrl` 只接受 `http://` / `https://`，允许为空（线下访谈、内部数据没有链接）。
+  `javascript:` / `data:` 一律 422——报告会导出成文件在别的机器打开，那是注入面。
+- 每份报告最多 50 条，超出返回 409 `CITATION_LIMIT_EXCEEDED`。
+- 跨用户的 `reportId` 与 `citationId` 一律 404，不区分「不存在」与「不属于你」。
+- 删除不走审批：来源是报告的附属记录，删掉只影响这份报告自己的附录。
+
+## 9. 尚未实现（文档 6 剩余）
 
 ```
-POST /api/v1/finance/calculate      （独立计算接口；页面内已可算）
 POST /api/v1/approvals/:id/decision （现用 POST /approvals 写入决定）
 ```
 
-## 9. 真实调用示例
+## 10. 真实调用示例
 
 ```bash
 # 健康检查
@@ -327,7 +378,7 @@ curl -s -OJ "http://localhost:3000/api/v1/reports/<reportId>/export?format=md"
 curl -s "http://localhost:3000/api/v1/reports/<reportId>/export?format=html"
 ```
 
-## 10. Next.js 16 注意
+## 11. Next.js 16 注意
 
 动态段 `params` 是 `Promise`，必须 `await ctx.params`；使用原生 `Response.json()`；
 `GET` Route Handler 默认不缓存。代码已按内置版本文档实现，未使用旧版同步 API。
