@@ -202,14 +202,51 @@ POST /api/v1/workflow-runs/:id/resume
 
 节点上另有 `attempts`（已执行次数）与 `lastError`（上次失败原因，续跑后仍保留，便于事后核对）。
 
-## 6. 尚未实现（文档 6 剩余）
+## 6. 执行记录（P1-6，已实现）
+
+```
+GET /api/v1/agent-runs/:id
+```
+
+单次执行的完整记录：发给 Agent 的输入、它产出的原文、耗时、token、失败原因。
+
+**为什么列表不走接口**：执行记录页在服务端直出列表（最近 50 条摘要），
+只有展开详情才调这个接口。产出动辄几千字，列表里带全文会让首屏传输量
+随使用时长线性增长；而摘要只带前 160 字与字数。
+
+**产出方式必须从证据推，不能直接读字段**：
+
+| provider 字段 | 实际产出方式 | 标签 |
+|---|---|---|
+| `none` | 内置研究框架，不含结论 | 框架模板（虚线灰） |
+| `mock` | 本地模拟 Provider，链路自检 | 模拟输出（琥珀） |
+| 其它 | 真实模型 | 真实模型（绿） |
+| **没有产出** | **不适用** | 无产出（红） |
+
+最后一行是关键：执行在写产出之前就失败时，`provider` 字段**已经有值**
+（它记录的是「准备用哪个 Provider」）。直接按 provider 标成「模拟输出」，
+会让人以为它真的产出了东西。所以判定的依据是「有没有 assistant 消息」，
+不是 provider 字段本身。
+
+**统计口径**：`框架模板 / 模拟输出 / 真实模型` 三个计数只统计 `succeeded`，
+失败的单列为「失败无产出」。否则三数之和会大于实际产出次数，对不上账。
+
+| 情况 | HTTP | code |
+|---|---|---|
+| id 不是合法 UUID | 404 | `RUN_NOT_FOUND` |
+| 记录不存在或不属于当前用户 | 404 | `RUN_NOT_FOUND` |
+
+两者都回 404 而不是 400/403：不区分「不存在」和「不是你的」，
+避免用 id 探测别人有哪些记录。
+
+## 7. 尚未实现（文档 6 剩余）
 
 ```
 POST /api/v1/finance/calculate      （独立计算接口；页面内已可算）
 POST /api/v1/approvals/:id/decision （现用 POST /approvals 写入决定）
 ```
 
-## 7. 真实调用示例
+## 8. 真实调用示例
 
 ```bash
 # 健康检查
@@ -249,6 +286,9 @@ curl -s -X POST http://localhost:3000/api/v1/workflow-runs/<runId>/resume \
 curl -s -X POST http://localhost:3000/api/v1/workflow-runs/<runId>/resume \
   -H "Content-Type: application/json" -d '{"action":"skip","note":"该数据源已下线，本次跳过"}'
 
+# 读一次执行的完整记录（展开详情时才调）
+curl -s http://localhost:3000/api/v1/agent-runs/<runId>
+
 # 导出报告（-OJ 按服务端给的文件名保存，中文名不乱码）
 curl -s -OJ "http://localhost:3000/api/v1/reports/<reportId>/export?format=md"
 
@@ -256,7 +296,7 @@ curl -s -OJ "http://localhost:3000/api/v1/reports/<reportId>/export?format=md"
 curl -s "http://localhost:3000/api/v1/reports/<reportId>/export?format=html"
 ```
 
-## 8. Next.js 16 注意
+## 9. Next.js 16 注意
 
 动态段 `params` 是 `Promise`，必须 `await ctx.params`；使用原生 `Response.json()`；
 `GET` Route Handler 默认不缓存。代码已按内置版本文档实现，未使用旧版同步 API。

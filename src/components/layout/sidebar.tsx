@@ -12,6 +12,7 @@ const ICONS: Record<string, IconName> = {
   tasks: "check",
   agents: "bot",
   workflows: "flow",
+  runs: "list",
   market: "globe",
   platforms: "layers",
   products: "box",

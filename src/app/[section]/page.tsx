@@ -8,10 +8,12 @@ import { FileUpload } from "@/components/modules/file-upload";
 import { FileTable } from "@/components/modules/file-table";
 import { ReportExport } from "@/components/modules/report-export";
 import { WorkflowCenter } from "@/components/modules/workflow-center";
+import { AgentRuns } from "@/components/modules/agent-runs";
 import { getEnv } from "@/lib/config/env";
 import { getModule } from "@/modules/registry";
 import { listRows, refOptions, type Row } from "@/modules/store";
 import { getWorkflowRun, listWorkflowsWithRuns } from "@/server/ai/workflows/engine";
+import { listRunCenter, type RunCenter } from "@/server/services/agent-runs";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +26,51 @@ export default async function SectionPage({ params }: Ctx) {
 
   if (section === "assistant") return <AssistantWorkspace userId={userId} />;
   if (section === "lineage") return <LineageView userId={userId} />;
+
+  if (section === "runs") {
+    // 执行记录单独成页：它是「看 Agent 干了什么」的地方，
+    // 和管理 Agent（注册、权限、启停）是两件事，塞在一起两边都做不好。
+    let center: RunCenter | null = null;
+    let error: string | null = null;
+    try {
+      center = await listRunCenter(userId);
+    } catch (e) {
+      error = e instanceof Error ? e.message : "执行记录读取失败";
+    }
+
+    return (
+      <>
+        <header className="page-head">
+          <div className="page-head-main">
+            <div className="eyebrow">执行 / 执行记录</div>
+            <h1>执行记录</h1>
+            <p>
+              Agent 每跑一次都留一条：发给它的输入、它产出的原文、花了多久、以及这次产出到底算不算数。
+              点任意一行展开全文。
+            </p>
+          </div>
+          <div className="page-head-side">
+            <div className="count-block">
+              <span className="count-value">{center?.stats.total ?? 0}</span>
+              <span className="count-label">次执行</span>
+            </div>
+          </div>
+        </header>
+
+        {error && (
+          <div className="status-banner is-error">
+            <strong>执行记录读取失败。</strong> {error}
+          </div>
+        )}
+
+        {center && (
+          <section className="section is-loose">
+            <AgentRuns runs={center.runs} stats={center.stats} currentMode={center.currentMode} />
+          </section>
+        )}
+      </>
+    );
+  }
 
   if (section === "workflows") {
     const list = await listWorkflowsWithRuns(userId);

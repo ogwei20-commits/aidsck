@@ -21,6 +21,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { slug: "tasks", label: "任务中心", group: "执行", status: "ready", sprint: "创建与执行", description: "每件事落到一条任务，可派 Agent 执行" },
   { slug: "agents", label: "Agent 中心", group: "执行", status: "ready", sprint: "注册与执行", description: "角色、工具白名单、权限等级，可直接派活" },
   { slug: "workflows", label: "工作流中心", group: "执行", status: "ready", sprint: "引擎可运行", description: "按节点推进，人工闸门不通过不前进" },
+  { slug: "runs", label: "执行记录", group: "执行", status: "ready", sprint: "输入与产出", description: "Agent 每次执行的输入、产出、耗时与产出方式" },
 
   { slug: "market", label: "市场研究", group: "研究", status: "ready", sprint: "问题到结论", description: "问题、资料、结论、来源" },
   { slug: "platforms", label: "平台比较", group: "研究", status: "ready", sprint: "佣金与门槛", description: "平台档案与适配评分" },
