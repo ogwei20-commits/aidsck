@@ -6,9 +6,11 @@ import { AssistantWorkspace } from "@/components/modules/assistant";
 import { LineageView } from "@/components/modules/lineage";
 import { FileUpload } from "@/components/modules/file-upload";
 import { FileTable } from "@/components/modules/file-table";
+import { WorkflowCenter } from "@/components/modules/workflow-center";
 import { getEnv } from "@/lib/config/env";
 import { getModule } from "@/modules/registry";
 import { listRows, refOptions, type Row } from "@/modules/store";
+import { getWorkflowRun, listWorkflowsWithRuns } from "@/server/ai/workflows/engine";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +23,35 @@ export default async function SectionPage({ params }: Ctx) {
 
   if (section === "assistant") return <AssistantWorkspace userId={userId} />;
   if (section === "lineage") return <LineageView userId={userId} />;
+
+  if (section === "workflows") {
+    const list = await listWorkflowsWithRuns(userId);
+    const runs: Record<string, Awaited<ReturnType<typeof getWorkflowRun>> | null> = {};
+    for (const wf of list) {
+      runs[wf.slug] = wf.lastRun ? await getWorkflowRun(userId, wf.lastRun.id).catch(() => null) : null;
+    }
+    return (
+      <>
+        <header className="page-head">
+          <div className="page-head-main">
+            <div className="eyebrow">执行 / 工作流中心</div>
+            <h1>工作流中心</h1>
+            <p>
+              把「研究 → 分析 → 核对 → 报告 → 审核」固化成可重跑的链路。
+              每次推进都写入执行记录；人工闸门不通过，流程不会前进。
+            </p>
+          </div>
+          <div className="page-head-side">
+            <div className="count-block">
+              <span className="count-value">{list.length}</span>
+              <span className="count-label">条流程</span>
+            </div>
+          </div>
+        </header>
+        <WorkflowCenter workflows={list} initialRuns={runs} />
+      </>
+    );
+  }
 
   const def = getModule(section);
   if (!def) notFound();

@@ -84,15 +84,62 @@
 | 410 | `FILE_MISSING_ON_DISK` | 有记录但磁盘缺件 |
 | 400 | `PATH_TRAVERSAL` | 存储路径越界 |
 
-## 3. 尚未实现（文档 6 剩余）
+## 3. 工作流（P0-2，已实现）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/v1/workflows` | 流程列表 + 每条最近一次运行 + 完整定义（用于未运行时的节点预览） |
+| POST | `/api/v1/workflows/:id/run` | 启动运行并推进到第一个停点；`id` 支持 slug 或 UUID |
+| GET | `/api/v1/workflow-runs/:id` | 读运行状态，**不推进** |
+| POST | `/api/v1/workflow-runs/:id/advance` | 推进到下一个停点（人工节点 / 闸门 / 失败 / 结束） |
+| POST | `/api/v1/workflow-runs/:id/decide` | `{"decision":"approve"\|"reject","note":"..."}` |
+
+**启动请求体**：
+
+```json
+{ "goal": "3 个月内用 2 万元验证家居类目在亚马逊美国站的可行性", "projectId": "可选" }
+```
+
+**响应体（关键字段）**：
+
+```json
+{
+  "runId": "uuid",
+  "workflowSlug": "product-feasibility",
+  "status": "queued",
+  "currentNode": "s13",
+  "currentNodeTitle": "用户审核（人工闸门）",
+  "executed": [{ "stepId": "s12", "title": "生成研究报告", "status": "succeeded" }],
+  "needsHuman": true,
+  "humanAction": "报告必须由本人确认后才能算完成。...",
+  "context": { "goal": "...", "projectId": "uuid", "steps": { "s1": { "status": "succeeded" } } },
+  "definition": { "steps": [] },
+  "disclaimer": "当前未接入任何 AI 模型..."
+}
+```
+
+**错误码**：
+
+| HTTP | code | 触发条件 |
+|---|---|---|
+| 404 | `WORKFLOW_NOT_FOUND` | 流程不存在 |
+| 404 | `RUN_NOT_FOUND` | 运行记录不存在或不属于当前用户 |
+| 409 | `WORKFLOW_DISABLED` | 流程已停用 |
+| 409 | `RUN_BUSY` | 同一运行正在执行（并发占位） |
+| 409 | `RUN_FINISHED` | 已结束的运行不能再推进或决策 |
+| 409 | `NOTHING_TO_DECIDE` | 没有等待人工处理的节点 |
+| 409 | `ARCHIVE_EMPTY` | 归档节点没有任何可归档内容 |
+| 422 | `WORKFLOW_DEFINITION_INVALID` | 定义结构不合法，拒绝启动 |
+
+## 4. 尚未实现（文档 6 剩余）
 
 ```
-POST /api/v1/workflows/:id/run      （工作流执行引擎，P0-2）
 POST /api/v1/finance/calculate      （独立计算接口；页面内已可算）
 POST /api/v1/approvals/:id/decision （现用 POST /approvals 写入决定）
+GET  /api/v1/reports/:id/export     （报告已落库，导出未做，P0-4）
 ```
 
-## 4. 真实调用示例
+## 5. 真实调用示例
 
 ```bash
 # 健康检查
@@ -111,9 +158,21 @@ curl -s -X POST http://localhost:3000/api/v1/tasks \
 # 未经审批归档 → 403 APPROVAL_REQUIRED
 curl -s -X PATCH http://localhost:3000/api/v1/projects/<id> \
   -H "Content-Type: application/json" -d '{"status":"archived"}'
+
+# 启动工作流（会一路跑到人工闸门停下）
+curl -s -X POST http://localhost:3000/api/v1/workflows/product-selection/run \
+  -H "Content-Type: application/json" \
+  -d '{"goal":"验证 3 个家居候选品的单件净利"}'
+
+# 闸门未批时推进 → executed 为空，不绕过
+curl -s -X POST http://localhost:3000/api/v1/workflow-runs/<runId>/advance
+
+# 批准并继续
+curl -s -X POST http://localhost:3000/api/v1/workflow-runs/<runId>/decide \
+  -H "Content-Type: application/json" -d '{"decision":"approve","note":"同意进入打样"}'
 ```
 
-## 5. Next.js 16 注意
+## 6. Next.js 16 注意
 
 动态段 `params` 是 `Promise`，必须 `await ctx.params`；使用原生 `Response.json()`；
 `GET` Route Handler 默认不缓存。代码已按内置版本文档实现，未使用旧版同步 API。

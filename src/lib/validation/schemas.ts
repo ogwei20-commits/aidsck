@@ -89,6 +89,22 @@ export const runAgentSchema = z
 
 export type RunAgentInput = z.infer<typeof runAgentSchema>;
 
+/** 启动工作流：goal 是研究目标，inputs 按节点 id 提供人工节点的内容 */
+export const startWorkflowSchema = z.object({
+  goal: z.string().trim().max(500, "目标最多 500 个字符").optional().default(""),
+  projectId: z.string().uuid("projectId 必须是合法 UUID").optional(),
+  inputs: z.record(z.string(), z.string().trim().max(2000, "单条输入最多 2000 个字符")).optional(),
+});
+
+/** 人工决策：approve 才会继续推进，reject 直接终止本次运行 */
+export const decideWorkflowSchema = z.object({
+  decision: z.enum(["approve", "reject"]),
+  note: z.string().trim().max(2000, "备注最多 2000 个字符").optional().default(""),
+});
+
+export type StartWorkflowInput = z.infer<typeof startWorkflowSchema>;
+export type DecideWorkflowInput = z.infer<typeof decideWorkflowSchema>;
+
 export type RunTaskInput = z.infer<typeof runTaskSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type PatchProjectInput = z.infer<typeof patchProjectSchema>;

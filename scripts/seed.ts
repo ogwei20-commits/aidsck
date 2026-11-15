@@ -1,5 +1,6 @@
 import { config } from "dotenv";
 import postgres from "postgres";
+import { BUILTIN_WORKFLOWS } from "../src/server/ai/workflows/definitions";
 
 config({ path: ".env.local" });
 config({ path: ".env" });
@@ -102,7 +103,31 @@ async function main(): Promise<void> {
     }
 
     const [{ n }] = await sql`select count(*)::int as n from agents`;
-    console.log(`[seed] 用户 1 个 · Agent 定义 ${n} 个（内置角色，非业务数据）`);
+
+    // 内置工作流定义：首次写入；后续默认不覆盖，避免冲掉用户在库里的改动。
+    // 需要把代码里的新定义同步到库里时，执行 npm run db:seed -- --reset-workflows
+    const resetWorkflows = process.argv.includes("--reset-workflows");
+    for (const wf of BUILTIN_WORKFLOWS) {
+      await sql`
+        insert into workflows (slug, name, description, definition, enabled, data_type, user_id)
+        values (${wf.slug}, ${wf.name}, ${wf.description},
+          ${sql.json(wf.definition as unknown as never)}, ${"true"}, ${"U"}, ${null})
+        on conflict (slug) do update set
+          name = excluded.name,
+          description = excluded.description,
+          enabled = excluded.enabled,
+          updated_at = now(),
+          definition = case
+            when ${resetWorkflows}::boolean then excluded.definition
+            when workflows.definition = '{}'::jsonb then excluded.definition
+            else workflows.definition
+          end`;
+    }
+
+    const [{ w }] = await sql`select count(*)::int as w from workflows`;
+    console.log(
+      `[seed] 用户 1 个 · Agent 定义 ${n} 个（内置角色，非业务数据） · 工作流定义 ${w} 个`,
+    );
   } catch (error) {
     console.error("[seed] FAIL:", error instanceof Error ? error.message : error);
     process.exitCode = 1;
