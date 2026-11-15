@@ -5,10 +5,72 @@ config({ path: ".env.local" });
 config({ path: ".env" });
 
 /**
- * 本地开发种子数据（可重复执行）。
- * 所有条目名称均带 [示例] 前缀，并在元数据中标注「本地开发种子，非真实业务数据」，
+ * 基础种子（可重复执行，幂等）。
+ *
+ * 只写两类东西：
+ * 1. 本地用户（APP_USER_ID 对应的唯一用户）
+ * 2. 文档 5.1 规定的 6 个核心 Agent 定义 —— 这是系统内置角色，不是示例业务数据
+ *
+ * 业务示例数据在 scripts/demo.ts，用 [演示] 前缀且可一键清除。
  * 绝不把模拟数据标成真实数据（文档 12 禁止行为）。
  */
+const AGENTS = [
+  {
+    slug: "supervisor",
+    name: "Supervisor Agent",
+    role: "orchestrator",
+    description: "AI 总管家：理解目标、拆解任务、分配 Agent、汇总结果",
+    instructions: "只做规划与调度；不得自行提权、不得购买付费服务、不得外发未授权数据。",
+    tools: ["task.create", "project.read", "approval.request"],
+    level: "L2",
+  },
+  {
+    slug: "market-analyst",
+    name: "Market Analyst",
+    role: "research",
+    description: "市场研究：市场规模、趋势、来源与证据",
+    instructions: "所有结论必须关联来源，并标注 R/E/P/S/U 数据类型。",
+    tools: ["research.read", "knowledge.read"],
+    level: "L1",
+  },
+  {
+    slug: "platform-analyst",
+    name: "Platform Analyst",
+    role: "research",
+    description: "平台比较：平台档案、费用、规则与比较报告",
+    instructions: "平台数据须标注来源与采集时间，区分真实数据与估算数据。",
+    tools: ["research.read", "knowledge.read"],
+    level: "L1",
+  },
+  {
+    slug: "product-researcher",
+    name: "Product Researcher",
+    role: "research",
+    description: "选品研究：产品档案、竞品分析与评分",
+    instructions: "竞品数据须关联来源；评分须说明权重与假设。",
+    tools: ["research.read", "product.read", "knowledge.read"],
+    level: "L1",
+  },
+  {
+    slug: "finance-analyst",
+    name: "Finance Analyst",
+    role: "analysis",
+    description: "财务分析：成本、售价、利润与盈亏平衡",
+    instructions: "金额一律精确数值；所有结果必须显示计算假设与币种。",
+    tools: ["finance.calculate", "product.read"],
+    level: "L2",
+  },
+  {
+    slug: "learning-mentor",
+    name: "Learning Mentor",
+    role: "learning",
+    description: "学习导师：学习计划、训练任务与能力评估",
+    instructions: "训练记录须关联项目成果，不得生成无依据的能力评分。",
+    tools: ["learning.read", "growth.read"],
+    level: "L2",
+  },
+] as const;
+
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;
   if (!url) {
@@ -24,36 +86,23 @@ async function main(): Promise<void> {
       values (${userId}, ${"本地用户"}, ${null})
       on conflict (id) do nothing`;
 
-    const existing = await sql`select count(*)::int as n from projects where name like '[示例]%'`;
-    if (existing[0].n > 0) {
-      console.log("[seed] 已存在示例数据，跳过（不会重复写入）");
-      return;
+    for (const a of AGENTS) {
+      await sql`
+        insert into agents (slug, name, role, description, system_instructions,
+          allowed_tools, permission_level, status, version, data_type)
+        values (${a.slug}, ${a.name}, ${a.role}, ${a.description}, ${a.instructions},
+          ${sql.json(a.tools as unknown as never)}, ${a.level}, ${"ready"}, ${"1.0.0"}, ${"U"})
+        on conflict (slug) do update set
+          name = excluded.name,
+          role = excluded.role,
+          description = excluded.description,
+          system_instructions = excluded.system_instructions,
+          allowed_tools = excluded.allowed_tools,
+          permission_level = excluded.permission_level`;
     }
 
-    const project = await sql`
-      insert into projects (user_id, name, description, status, progress, data_type)
-      values (${userId}, ${"[示例] 东南亚小家电可行性研究"},
-        ${"本地开发种子数据，非真实业务数据。用于验证 F-05/F-06 读写链路。"},
-        ${"planning"}, ${0}, ${"U"})
-      returning id`;
-    const projectId = project[0].id;
-
-    await sql`
-      insert into tasks (user_id, project_id, title, status, priority, source, data_type)
-      values
-        (${userId}, ${projectId}, ${"[示例] 整理三个平台的佣金规则"}, ${"pending"}, ${2}, ${"user"}, ${"U"}),
-        (${userId}, ${projectId}, ${"[示例] 采集候选品类的公开数据"}, ${"pending"}, ${3}, ${"user"}, ${"U"})`;
-
-    const seedDetail = JSON.stringify({
-      note: "本地开发种子，非真实业务数据",
-      script: "npm run db:seed",
-    });
-    await sql`
-      insert into audit_logs (user_id, action, entity_type, entity_id, permission_level, detail)
-      values (${userId}, ${"create"}, ${"seed"}, ${String(projectId)}, ${"L2"},
-        ${seedDetail}::jsonb)`;
-
-    console.log("[seed] 已写入：1 用户 / 1 项目 / 2 任务 / 1 审计日志（均标注为示例数据）");
+    const [{ n }] = await sql`select count(*)::int as n from agents`;
+    console.log(`[seed] 用户 1 个 · Agent 定义 ${n} 个（内置角色，非业务数据）`);
   } catch (error) {
     console.error("[seed] FAIL:", error instanceof Error ? error.message : error);
     process.exitCode = 1;

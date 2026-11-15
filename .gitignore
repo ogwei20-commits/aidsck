@@ -57,3 +57,6 @@ next-env.d.ts
 .next-docs/
 playwright-report/
 test-results/
+
+# 浏览器验收截图（过程产物，不入库）
+.design/

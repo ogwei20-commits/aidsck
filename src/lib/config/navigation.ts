@@ -1,35 +1,41 @@
 import type { NavItem } from "@/types";
 
 /**
- * 文档 1.1 / 1.2 / 7：全部模块统一登记。
- * 只有 ready / partial 会链接到真实页面；planned 一律显示「规划中」并标注 Sprint，
- * 避免用户误以为功能已可用。
+ * 19 个模块的真实状态登记。
+ *
+ * 状态含义（不允许含糊）：
+ * - ready   该模块有真实增删改查，数据落 PostgreSQL，刷新不丢
+ * - partial 有真实数据，但能力不完整（例如文件中心只支持元数据登记，不支持上传）
+ *
+ * 说明：文档 1.2 列的「规划中」能力（真实店铺管理、订单/库存同步、自动发布、
+ * 广告投放、客服、自动退款采购、多租户、插件市场等）不属于这 19 个模块，
+ * 它们在相关页面内以「第一阶段不实现」的形式明确标注，不在导航里伪装成入口。
  */
 export const NAV_GROUPS = ["总览", "执行", "研究", "沉淀与治理"] as const;
 
 export const NAV_ITEMS: readonly NavItem[] = [
-  { slug: "dashboard", label: "综合首页", group: "总览", status: "ready", sprint: "S1", description: "工作台、导航与真实数据汇总" },
-  { slug: "assistant", label: "AI 总管家", group: "总览", status: "planned", sprint: "S4", description: "对话、任务规划与 Agent 调度" },
+  { slug: "dashboard", label: "综合首页", group: "总览", status: "ready", sprint: "对话 · 结果 · 沉淀", description: "今天的焦点、生意数字与执行轨迹" },
+  { slug: "assistant", label: "AI 总管家", group: "总览", status: "ready", sprint: "规则模板拆解", description: "把一句目标拆成可执行任务" },
 
-  { slug: "projects", label: "项目中心", group: "执行", status: "partial", sprint: "S3", description: "项目创建、修改、进度（当前为最小版）" },
-  { slug: "tasks", label: "任务中心", group: "执行", status: "partial", sprint: "S3", description: "任务创建与状态追踪（当前为最小版）" },
-  { slug: "agents", label: "Agent 中心", group: "执行", status: "planned", sprint: "S4", description: "Agent 注册、分配与执行记录" },
-  { slug: "workflows", label: "工作流中心", group: "执行", status: "planned", sprint: "S5", description: "可行性研究工作流执行引擎" },
+  { slug: "projects", label: "项目中心", group: "执行", status: "ready", sprint: "可增删改", description: "一次跨境尝试一个项目" },
+  { slug: "tasks", label: "任务中心", group: "执行", status: "ready", sprint: "可增删改", description: "每件事落到一条任务" },
+  { slug: "agents", label: "Agent 中心", group: "执行", status: "ready", sprint: "注册与权限", description: "角色、工具白名单、权限等级" },
+  { slug: "workflows", label: "工作流中心", group: "执行", status: "ready", sprint: "定义与重跑", description: "把研究步骤固化成流程" },
 
-  { slug: "market", label: "市场研究", group: "研究", status: "planned", sprint: "S5", description: "研究任务、资料、结论与来源" },
-  { slug: "platforms", label: "平台比较", group: "研究", status: "planned", sprint: "S5", description: "平台档案与比较报告" },
-  { slug: "products", label: "选品研究", group: "研究", status: "planned", sprint: "S5", description: "产品档案、竞品分析与评分" },
-  { slug: "suppliers", label: "供应链研究", group: "研究", status: "planned", sprint: "S5", description: "供应商资料与物流研究" },
-  { slug: "finance", label: "财务模拟", group: "研究", status: "planned", sprint: "S5", description: "成本、利润与盈亏平衡" },
+  { slug: "market", label: "市场研究", group: "研究", status: "ready", sprint: "问题到结论", description: "问题、资料、结论、来源" },
+  { slug: "platforms", label: "平台比较", group: "研究", status: "ready", sprint: "佣金与门槛", description: "平台档案与适配评分" },
+  { slug: "products", label: "选品研究", group: "研究", status: "ready", sprint: "进价与售价", description: "产品档案、需求与竞争强度" },
+  { slug: "suppliers", label: "供应链研究", group: "研究", status: "ready", sprint: "起订与交期", description: "供应商报价、起订量、物流" },
+  { slug: "finance", label: "财务模拟", group: "研究", status: "ready", sprint: "成本与利润", description: "单件成本、利润与盈亏平衡" },
 
-  { slug: "learning", label: "学习中心", group: "沉淀与治理", status: "planned", sprint: "S6", description: "学习计划、课程与训练记录" },
-  { slug: "growth", label: "成长档案", group: "沉淀与治理", status: "planned", sprint: "S6", description: "能力记录与项目成果" },
-  { slug: "knowledge", label: "知识库", group: "沉淀与治理", status: "planned", sprint: "S5", description: "研究资料与知识检索" },
-  { slug: "files", label: "文件中心", group: "沉淀与治理", status: "planned", sprint: "S3", description: "文件上传与元数据管理" },
-  { slug: "reports", label: "报告中心", group: "沉淀与治理", status: "planned", sprint: "S5", description: "报告生成与导出" },
-  { slug: "lineage", label: "数据溯源", group: "沉淀与治理", status: "planned", sprint: "S2", description: "数据来源、类型与可信度" },
-  { slug: "approvals", label: "安全中心", group: "沉淀与治理", status: "partial", sprint: "S4", description: "权限检查、审批记录与操作日志（当前为最小版）" },
-  { slug: "settings", label: "系统设置", group: "沉淀与治理", status: "planned", sprint: "S7", description: "环境与运行配置" },
+  { slug: "learning", label: "学习中心", group: "沉淀与治理", status: "ready", sprint: "计划与进度", description: "学习计划与周投入" },
+  { slug: "growth", label: "成长档案", group: "沉淀与治理", status: "ready", sprint: "能力与下一步", description: "能力等级与下一步动作" },
+  { slug: "knowledge", label: "知识库", group: "沉淀与治理", status: "ready", sprint: "可检索条目", description: "结论、规则、踩过的坑" },
+  { slug: "files", label: "文件中心", group: "沉淀与治理", status: "partial", sprint: "仅元数据", description: "文件元数据与本地路径登记" },
+  { slug: "reports", label: "报告中心", group: "沉淀与治理", status: "ready", sprint: "草稿到定稿", description: "带来源的研究报告" },
+  { slug: "lineage", label: "数据溯源", group: "沉淀与治理", status: "ready", sprint: "数据类型与留痕", description: "每条数据的来源与改动记录" },
+  { slug: "approvals", label: "安全中心", group: "沉淀与治理", status: "ready", sprint: "审批与日志", description: "L3 操作的审批闸门" },
+  { slug: "settings", label: "系统设置", group: "沉淀与治理", status: "ready", sprint: "运行参数", description: "集中管理运行配置" },
 ];
 
 export function findNavItem(slug: string): NavItem | undefined {
@@ -38,4 +44,11 @@ export function findNavItem(slug: string): NavItem | undefined {
 
 export function navHref(slug: string): string {
   return slug === "dashboard" ? "/" : `/${slug}`;
+}
+
+export function navByGroup(): { group: string; items: NavItem[] }[] {
+  return NAV_GROUPS.map((group) => ({
+    group,
+    items: NAV_ITEMS.filter((n) => n.group === group),
+  }));
 }

@@ -1,45 +1,63 @@
-# PROJECT_STATE · CrossBorder AI Workspace
+# 项目状态
 
-> 更新时间：2026-11-15 · 维护者：交付总监（大湾区靓仔）
-> 用途：下次会话开头先读本文件，再决定「继续 / 改方向」
+> 最后更新：2026-11-15 · 第二阶段交付（V2 视觉与范围重做）
 
 ## 当前阶段
 
-Phase 1 / Sprint 1（前端第一版已完成，**停在人工审批闸门**，未进入 Sprint 2）
+Sprint 1 骨架 + V2 重做已完成并通过验证。**19 个模块全部可增删改查**，数据落本机 PostgreSQL。
 
-## 已完成（只写产物路径）
+## 已完成（带产物）
 
-- 工程骨架与版本锁定：`package.json`, `package-lock.json`, `tsconfig.json`, `drizzle.config.ts`, `vitest.config.ts`
-- 分层目录：`src/{app,components,modules,server,db,lib,types}`, `storage/`, `tests/`, `docs/`, `scripts/`
-- 综合首页与导航：`src/app/page.tsx`, `src/app/[section]/page.tsx`, `src/components/layout/`, `src/components/dashboard/`, `src/app/globals.css`
-- 数据库与迁移：`src/db/schema/index.ts`, `src/db/migrations/0000_curvy_fenris.sql`, `src/db/migrations/meta/`
-- API：`src/app/api/v1/{health,projects,tasks,audit-logs,approvals,agents}/`
-- 服务与治理：`src/server/services/workspace.ts`, `src/server/permissions/policy.ts`, `src/server/audit/logger.ts`, `src/server/ai/`
-- 测试：`tests/unit/*.test.ts`, `tests/integration/*.test.ts`
-- 运维脚本：`scripts/{db-check,seed,backup.sh,restore.sh}`
-- 文档：`README.md`, `docs/01..10`, `docs/ACCEPTANCE-SPRINT-1.md`
+| 项 | 产物路径 |
+|---|---|
+| 工程骨架（Next.js 16 + TS + Tailwind 4） | `package.json`、`tsconfig.json`、`next.config.ts` |
+| 数据模型 39 张表 / 7 个域文件 | `src/db/schema/*.ts` |
+| 3 个迁移（全部已应用并进 Git） | `src/db/migrations/0000..0002` |
+| 通用 CRUD 内核 | `src/modules/store.ts` |
+| 19 份模块定义 | `src/modules/defs/*.ts` |
+| 通用模块页 | `src/app/[section]/page.tsx` |
+| 三套配色 + 版式系统 | `src/app/globals.css`、`src/lib/config/theme*.ts` |
+| 首页三段式（对话→结果→沉淀） | `src/app/page.tsx` |
+| AI 总管家（规则模板拆解） | `src/server/ai/orchestrator/planner.ts`、`src/app/api/v1/assistant/plan/route.ts` |
+| 财务计算（口径可复现） | `src/server/services/dashboard.ts`、`src/components/modules/finance-result.tsx` |
+| 权限与审批闸门 | `src/server/permissions/policy.ts` |
+| 审计日志 | `src/server/audit/logger.ts` |
+| 备份/恢复演练脚本 | `scripts/backup.sh`、`scripts/restore.sh` |
+| 演示数据（可一键清除） | `scripts/demo.ts` |
+| 三套配色对比图 | `.design/theme-compare.png` |
 
-## 进行中
+## 验证结果（真跑，非声称）
 
-- 无（停在审批闸门，不并行推进后端/业务模块）
+| 检查 | 结果 |
+|---|---|
+| `npm run typecheck` | 退出码 0 |
+| `npm run lint` | 退出码 0 |
+| `npm test` | 35 / 35 通过 |
+| `npm run build` | 退出码 0，13 条路由全部按需渲染 |
+| 19 个模块页 | 全部 HTTP 200 |
+| 通用 CRUD | 201 创建 / 200 读取 / 200 修改 / 403 删除需审批 / 422 校验 / 404 未知模块 |
+| 财务口径 | 19.9 档 → 成本 17.06、净利 2.84、回本 1058 单；25 档 → 成本 19.48、回本 362 单 |
+| 目标拆解 | 3 个匹配环节 + 补齐至 4 步，合规环节标「人工执行」 |
+| 三档视口 | 1440 / 375 均 0 横向溢出，标题不断行 |
+| 备份恢复 | 恢复到独立临时库，数据行数一致 |
 
-## 待决策（每条带推荐项）
+## 待决策
 
-| 决策 | 推荐项 | 为什么需用户拍板 |
+| 项 | 选项 | 推荐 |
 |---|---|---|
-| 前端首页方向 | 保留「掌控台式」首屏（输入框 + 真实大数字） | 后续所有页面长在这个界面上，方向错了要重做 |
-| Sprint 2 优先补哪批表 | 先补 `files` + `research_*`，支撑文件中心与研究报告 | 表结构一旦定错，迁移代价高 |
-| 是否现在启用外部 AI | **否**，继续 `none` / `mock` | 涉及费用，未经批准不得启用 |
+| 配色定稿 | 深色专业 / 浅色琥珀 / 浅色靛蓝 / 混用（深色 + 浅色各留一套） | **深色专业**（信息密度与工具感最匹配工作台） |
+| 是否接入真实模型 | 继续 `none` / 启用 `mock` / 接付费 API | **继续 none**，等明确预算再谈 |
+| 文件上传 | 保持元数据 / 补拖拽上传 | Sprint 3 补 |
 
-## 下一步（≤3 条）
+## 下一步（≤3）
 
-1. 用户确认前端第一版 → 才进入 Sprint 2 数据库表扩展
-2. 生成第二批迁移文件并纳入 Git
-3. 补齐项目/任务最小版交互与文件元数据
+1. 定配色 → 把其余页面的零散色值全部收敛到主题变量（当前已全走变量，只需验证）
+2. 财务模拟补「不同售价情景对比」（同一方案多组售价并排算）
+3. 工作流中心补执行引擎：把定义真正跑起来并写 `workflow_runs`
 
-## 已知坑（同类任务开工前扫一眼）
+## 已知风险
 
-- Next.js 16 的 `params` 是 Promise；`next lint` 已移除；Turbopack 默认。写码前读 `node_modules/next/dist/docs/`。
-- `vitest@5` 要求 `@types/node ^22||>=24`，脚手架默认 `^20` 会 ERESOLVE；正确修法是升 `@types/node` 到 22，不要用 `--force`。
-- `next/font/google` 会在构建期联网拉字体，已改为本地中文系统字体栈。
-- 首页必须 `force-dynamic`，否则 build 阶段会尝试连未启动的数据库。
+- 无登录认证：只可本机/受控网络使用，**禁止暴露公网**
+- 文件中心只登记元数据，原件需自行归档
+- AI 未接入，所有拆解来自规则模板，已在 UI 显式标注
+- Windows 实机未验证（当前在 Linux 沙箱完成构建与运行验证，Windows 步骤见 README 第 3 节）

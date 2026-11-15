@@ -1,151 +1,178 @@
-# CrossBorder AI Workspace · 跨境电商 AI 智能体工作台
+# CrossBorder AI Workspace
 
-> Development Blueprint V1.0 · Phase 1 — Foundation & MVP
-> 当前进度：**Sprint 0 + Sprint 1 + Sprint 2（数据库最小切片）**
-> 运行方式：本机单人本地运行 · 优先免费 · 未经批准不产生任何付费费用
+跨境电商 AI 智能体工作台 · 第一阶段（本地运行）
 
----
-
-## 1. 这一版到底是什么
-
-按《第一阶段开发实施文档》第 12 节的**第一条开发任务**：只建立基础工程、综合首页、导航和数据库连接，
-不提前开发所有业务模块。这一版是**真实可跑的工程骨架**，不是原型、不是静态页面。
-
-已经真实可用：
-
-- Next.js 16 工程、TypeScript、Tailwind、ESLint，依赖版本写死并提交 `package-lock.json`
-- 综合首页：任务、项目、操作日志、状态数字**全部来自 PostgreSQL**，没有写死在页面里的假数组
-- 左侧导航：19 个模块逐项标注「已可用 / 最小版 / 规划中」，规划中模块只有诚实占位页
-- 数据库连接：Drizzle ORM + 迁移文件 + 健康检查 + 备份恢复脚本
-- 最小真实数据链路：创建项目 / 修改项目 / 创建任务 / 自动写审计日志
-- 权限与审批骨架：L1–L4 分级、工具白名单、归档操作必须有人审批记录，否则 403
-- AI Provider 统一接口：`none` 未配置（默认）/ `mock` 本地模拟（强制标注）/ 外部模型**未实现且拒绝启用**
-- 自动化测试：Vitest 单元 + 集成（连真实数据库）
-
-明确**尚未完成**（见 `docs/ACCEPTANCE-SPRINT-1.md`）：Agent 调度、工作流引擎、市场/选品/财务等研究业务、
-文件上传、报告导出、学习成长、认证与多租户、完整审批中心 UI。
+19 个模块全部可增删改查，数据写入本机 PostgreSQL。没有一条是写死的假数据，也没用静态页面冒充功能。
 
 ---
 
-## 2. Windows 环境准备（Sprint 0）
+## 1. 先看它能干什么
 
-目标设备：Windows 电脑，16GB RAM，本地运行，不使用 Docker。
+打开首页，首屏是一句话输入框。你写「想在美国卖宠物冻干零食，预算 5 万」，系统按跨境电商的研究流程拆成任务，直接落到任务中心：
 
-| 软件 | 建议版本 | 说明 |
+| 拆出来的任务 | 谁来干 | 权限 |
 |---|---|---|
-| Node.js | 22 LTS（本项目验证于 v22.13.1） | 官网安装包，勾选加入 PATH |
-| Git | 2.43+ | 默认安装即可 |
-| VS Code | 稳定版 | 建议装 ESLint / Tailwind 插件 |
-| PostgreSQL | 16（本项目验证于 16.15） | 官方 Windows 安装包，安装时记住 postgres 密码、端口 5432 |
-| GitHub | 私有仓库 | **由你本人创建**；本项目不会擅自创建或公开仓库 |
+| 市场研究：规模、需求与竞争格局 | Market Analyst | L1 |
+| 平台比较：佣金、门槛与品类适配度 | Platform Analyst | L1 |
+| 选品研究：候选产品与竞品拆解 | Product Researcher | L1 |
+| 财务模拟：单件成本、利润与盈亏平衡 | Finance Analyst | L2 |
+| 合规核查：准入资质与税务要求 | 人工执行（暂无该角色） | — |
 
-安装 PostgreSQL 后，在 **pgAdmin 或 psql** 中执行（把密码换成你自己的）：
+拆解来自**内置流程模板**，不是模型推理。每一条结果都会写明这一点——接入真实模型前，系统不会声称任何输出是 AI 生成的。
+
+## 2. 19 个模块
+
+| 分组 | 模块 | 能做什么 |
+|---|---|---|
+| 总览 | 综合首页 | 一句话拆任务、生意数字、双轨（做/学）、Agent 状态、沉淀、边界 |
+| 总览 | AI 总管家 | 目标拆解、挂项目、拆解留痕 |
+| 执行 | 项目中心 | 项目增删改、状态流转、进度 |
+| 执行 | 任务中心 | 任务增删改、优先级、关联项目与 Agent |
+| 执行 | Agent 中心 | 角色注册、权限等级、工具白名单 |
+| 执行 | 工作流中心 | 流程定义与说明 |
+| 研究 | 市场研究 | 问题 → 资料 → 结论，状态流转 |
+| 研究 | 平台比较 | 平台档案、佣金、门槛、适配评分 |
+| 研究 | 选品研究 | 产品档案、进价售价、竞争强度 |
+| 研究 | 供应链研究 | 供应商、起订量、单价、交期 |
+| 研究 | 财务模拟 | 输入成本售价 → 自动算单件成本/净利/利润率/盈亏平衡 |
+| 沉淀 | 学习中心 | 学习计划、周投入、进度 |
+| 沉淀 | 成长档案 | 能力等级、目标等级、下一步 |
+| 沉淀 | 知识库 | 结论、规则、踩过的坑，可分类打标 |
+| 沉淀 | 文件中心 | 文件元数据与路径登记（**不支持上传**，见第 6 节） |
+| 沉淀 | 报告中心 | 草稿 → 待审 → 定稿 |
+| 沉淀 | 数据溯源 | 各表数据量、数据类型标准、变更留痕 |
+| 沉淀 | 安全中心 | 审批登记、L3 操作闸门 |
+| 沉淀 | 系统设置 | 运行参数 |
+
+## 3. 快速开始（Windows 16GB 本地）
+
+### 3.1 装依赖
+
+| 软件 | 版本 | 说明 |
+|---|---|---|
+| Node.js | 22.x LTS | [nodejs.org](https://nodejs.org) 下载 LTS，安装时勾选 Add to PATH |
+| PostgreSQL | 16.x | [postgresql.org/download/windows](https://www.postgresql.org/download/windows/)，安装时记住 postgres 密码 |
+| Git | 最新 | [git-scm.com](https://git-scm.com) |
+
+### 3.2 建库
+
+用 pgAdmin 或命令行：
 
 ```sql
-CREATE ROLE cbai LOGIN PASSWORD '你自己的本地密码';
+CREATE ROLE cbai LOGIN PASSWORD '改成一个你自己的密码';
 CREATE DATABASE crossborder_ai OWNER cbai;
 ```
 
----
+### 3.3 跑起来
 
-## 3. 三条命令跑起来
-
-```bash
-# 1. 进入项目目录并安装依赖（版本已锁定）
+```powershell
 cd crossborder-ai-workspace
 npm ci
-
-# 2. 配置环境变量 + 建表 + 可选的开发种子数据
-cp .env.example .env.local       # Windows PowerShell: copy .env.example .env.local
-#    编辑 .env.local，把 DATABASE_URL 改成你自己的本地连接串
+copy .env.example .env.local
+# 编辑 .env.local，把 DATABASE_URL 改成你的密码
 npm run db:migrate
-npm run db:check                 # 应输出 PASS
-npm run db:seed                  # 可选：写入明确标注 [示例] 的开发种子
-
-# 3. 启动
-npm run dev                      # 打开 http://localhost:3000
+npm run db:seed
+npm run dev
 ```
 
-`DATABASE_URL` 格式：`postgresql://cbai:你的密码@127.0.0.1:5432/crossborder_ai`
+打开 http://localhost:3000 。
 
-如果数据库没配好，首页不会崩溃，也不会伪造数据 —— 它会显示**空状态 + 明确的红色配置提示**。
+### 3.4 想先看点内容
 
----
+```powershell
+npm run db:demo        # 写入一组「[演示]」开头的数据
+npm run db:demo:clear  # 一键清除，不留残留
+```
 
-## 4. 常用命令
+演示数据全部标 `[演示]` 前缀，`data_type = U`（用户输入），平台费率标 `E`（估算）——不冒充真实采集数据。
 
-| 命令 | 用途 |
+## 4. 三套配色
+
+顶栏右侧可切换，选择写进 cookie，刷新不丢。
+
+| 方案 | 适用 |
 |---|---|
-| `npm run dev` | 本地开发（`http://localhost:3000`） |
-| `npm run build` | 生产构建（Turbopack） |
-| `npm run typecheck` | TypeScript 类型检查 |
-| `npm run lint` | ESLint |
-| `npm test` | Vitest 单元 + 集成测试（需数据库已连通） |
-| `npm run db:generate` | 修改 schema 后生成迁移文件（**必须提交 Git**） |
-| `npm run db:migrate` | 应用迁移 |
-| `npm run db:check` | 连接、表结构、行数检查 |
-| `npm run db:backup` | 生成 `storage/backups/*.dump` |
-| `npm run db:restore -- <文件>` | 恢复（覆盖数据，需交互确认） |
+| 深色专业 | 信息密度高，长时间盯着不累，AI 工具感最强 |
+| 浅色琥珀 | 贸易、物流、钱的味道 |
+| 浅色靛蓝 | 稳重企业感，报告与数据为主 |
 
-健康检查：`curl http://localhost:3000/api/v1/health`
+改配色只改 `src/app/globals.css` 里 `[data-theme="..."]` 下的变量，组件不写死颜色。
 
----
-
-## 5. 目录结构（按文档 3 建立，空目录随 Sprint 逐步填充）
+## 5. 架构
 
 ```
 src/
-├── app/                     # 页面与 /api/v1/ 路由
-│   ├── page.tsx             # 综合首页（真实数据）
-│   ├── [section]/page.tsx   # 模块页：真实数据 or 规划中占位
-│   └── api/v1/              # projects / tasks / audit-logs / approvals / agents / health
-├── components/              # layout / dashboard / ui（含内联 SVG 图标库）
-├── modules/                 # 业务模块目录（Sprint 3+ 逐步填充）
-├── server/                  # services / permissions / audit / ai(providers, agents, tools)
-├── db/                      # schema / migrations / seed
-├── lib/                     # config / validation / errors / utils
-└── types/
-docs/                        # 01–10 设计文档 + 验收报告
-storage/                     # uploads / reports / backups
-scripts/                     # db-check / seed / backup / restore
-tests/                       # unit / integration / e2e
+├── app/
+│   ├── page.tsx                 # 首页：对话 → 结果 → 沉淀 三段式
+│   ├── [section]/page.tsx       # 通用模块页（19 个模块共用一套）
+│   └── api/v1/
+│       ├── modules/[module]/        # 通用 CRUD（15 个模块共用）
+│       ├── assistant/plan/          # 目标拆解
+│       ├── projects|tasks|approvals # 专项端点
+│       └── health|agents|audit-logs
+├── modules/
+│   ├── types.ts                 # 模块定义的类型
+│   ├── defs/                    # 19 份模块定义（字段、列、空态文案）
+│   ├── registry.ts              # 汇总 + 表名白名单
+│   └── store.ts                 # 通用数据内核（参数化查询）
+├── db/
+│   ├── schema/                  # 7 个域文件，39 张表
+│   └── migrations/              # 3 个迁移，全部纳入 Git
+├── server/
+│   ├── ai/{providers,orchestrator,agents,tools}
+│   ├── services/                # 汇总查询、财务计算
+│   ├── permissions/             # L1–L4 + 审批闸门
+│   └── audit/                   # 审计日志
+└── components/                  # 布局、首页、模块通用组件
 ```
 
-分层方向：**页面 → 组件 → 服务 → 数据访问**，下层不得 import 上层。
+**为什么用「一个内核 + 19 份定义」**：19 个模块手写 19 套 CRUD，必然一半是半成品。现在新增一个模块只需要在 `defs/` 里写一份定义，页面与 API 自动可用。
+
+**安全边界**：表名和列名只来自注册表白名单，任何外部字符串都不进入 SQL 标识符位置；值一律参数绑定。
+
+## 6. 现在做不到什么（写清楚，不装）
+
+| 限制 | 现状 | 什么时候补 |
+|---|---|---|
+| AI 真实推理 | `AI_PROVIDER=none`，不调任何模型、不产生费用 | 接入前需要你批准，并明确预算 |
+| 登录认证 | 无认证，只在本机用 | 暴露公网前必须补齐 |
+| 文件上传 | 只登记元数据与路径，不接收文件 | Sprint 3 |
+| 店铺/订单/库存同步 | 未实现 | 第二阶段 |
+| 自动发布/投放/客服/退款 | 未实现 | 第二阶段 |
+| 多租户与插件市场 | 未实现 | 第二阶段 |
+| 向量检索 | 建了 `file_chunks` 表，未接检索 | 后续 |
+
+## 7. 命令
+
+| 命令 | 作用 |
+|---|---|
+| `npm run dev` | 开发服务 |
+| `npm run build` / `npm start` | 生产构建与运行 |
+| `npm run typecheck` | 类型检查 |
+| `npm run lint` | ESLint |
+| `npm test` | Vitest（35 个用例） |
+| `npm run db:generate` | 改完 schema 生成迁移 |
+| `npm run db:migrate` | 应用迁移 |
+| `npm run db:check` | 连通与表结构自检 |
+| `npm run db:seed` | 内置 Agent 定义（幂等） |
+| `npm run db:demo` / `npm run db:demo:clear` | 演示数据写入 / 清除 |
+| `npm run db:backup` / `npm run db:restore` | 备份 / 恢复 |
+
+## 8. 数据规则
+
+- 金额一律 `numeric(18,4)`，不用浮点（`src/db/schema/shared.ts`）
+- 汇率 `numeric(18,8)`，保留历史不覆盖
+- 每条业务数据带 `data_type`：R 真实 / E 估算 / P 预测 / S 模拟 / U 用户输入
+- 表结构变更只能通过迁移文件，迁移必须进 Git
+- 删除是 L3 操作：需要安全中心里的 approved 记录，否则 403
+- 所有创建、修改、审批、拆解都写 `audit_logs`
+
+## 9. 技术栈（已锁定版本）
+
+Next.js 16.4.6 · React 19.3.0 · TypeScript 5 · Tailwind CSS 4.3.3 · Drizzle ORM 0.44 · postgres.js 3.4 · Zod 4 · Vitest 5.1
+
+`package-lock.json` 已提交，`npm ci` 可复现。
 
 ---
 
-## 6. 数据库规则（文档 4.4）
-
-1. 所有表结构变化必须通过 `npm run db:generate` 生成迁移文件，并纳入 Git。
-2. 金额字段一律 `numeric(18,4)`，禁止用浮点数存货币。
-3. 所有重要数据带 `id / created_at / updated_at / user_id / status / data_type`。
-4. `data_type` 是数据库枚举：**R 真实 / E 估算 / P 预测 / S 模拟 / U 用户输入**。
-5. 删除数据前必须有审批；归档项目受 `requireApproval()` 闸门保护。
-6. 备份必须实际恢复验证过（`docs/ACCEPTANCE-SPRINT-1.md` 有演练记录）。
-
----
-
-## 7. 安全与成本（文档 9 / 12）
-
-- `.env.local` 已被 `.gitignore` 排除，**真实密钥绝不进源码或 Git**。
-- `AI_PROVIDER=none` 为默认：不调用任何模型、不产生费用。首页明确显示「AI 未配置」。
-- `AI_PROVIDER=mock` 的输出强制带「模拟输出 · 非真实 AI」，不可作为研究结论。
-- 外部/付费模型适配器**未实现**；尝试启用会返回 403 并提示需人工批准。
-- 上传、导出、外部网页内容在后续 Sprint 一律按不可信数据处理。
-- 第一阶段**仅本机或受控网络运行**，未完成认证与安全检查前禁止暴露到公网。
-- 未安装/未配置任何付费软件、云服务或 AI API。
-
----
-
-## 8. 验收对照
-
-逐条结论与真实命令输出见 `docs/ACCEPTANCE-SPRINT-1.md`（F-01 ~ F-16）。
-未通过项明确标注「未完成」，不伪造测试结果。
-
----
-
-## 9. 下一步（需人工审批后才继续）
-
-**Sprint 2 / 3**：补齐文档 4.2 的其余数据表（按迁移文件分批）、完整项目管理与任务管理、
-文件元数据、首页汇总扩展。前端第一版已交付，**请确认方向后再往下做**。
+第一阶段目标：先跑通一条完整业务流程，再扩展。当前状态见 `PROJECT_STATE.md`。

@@ -8,6 +8,20 @@
       "when": 1794711911946,
       "tag": "0000_curvy_fenris",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794714546691,
+      "tag": "0001_full_domain_model",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794715189765,
+      "tag": "0002_finance_fixed_cost",
+      "breakpoints": true
     }
   ]
 }

@@ -7,6 +7,8 @@ import type { NextConfig } from "next";
  * 等 Phase 2 需要静态化与缓存策略时再评估开启（文档 2.1「不因追求新技术增加复杂度」）。
  */
 const nextConfig: NextConfig = {
+  /** 关闭开发期悬浮指示器，避免它出现在界面截图里被当成产品元素 */
+  devIndicators: false,
   turbopack: {
     rules: {
       "*.css": {

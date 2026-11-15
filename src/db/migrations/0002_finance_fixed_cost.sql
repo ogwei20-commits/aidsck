@@ -1,0 +1,1 @@
+ALTER TABLE "finance_scenarios" ADD COLUMN "fixed_cost" numeric(18, 4) DEFAULT '0' NOT NULL;
