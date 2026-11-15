@@ -151,6 +151,10 @@ button { cursor: pointer; }
 .shell { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 100vh; }
 .shell-main { min-width: 0; display: flex; flex-direction: column; }
 
+/* 桌面端 nav-root 不参与布局，aside 直接成为栅格首列 */
+.nav-root { display: contents; }
+.mobile-bar, .sb-close, .drawer-backdrop { display: none; }
+
 .sidebar {
   position: sticky; top: 0; height: 100vh; overflow-y: auto;
   background: var(--side-bg); color: var(--side-text);
@@ -162,7 +166,7 @@ button { cursor: pointer; }
   width: 32px; height: 32px; flex: none; display: grid; place-items: center;
   background: var(--accent); color: var(--accent-ink); border-radius: 4px;
 }
-.brand-text { min-width: 0; }
+.brand-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .brand-name { font-size: var(--fs-3); font-weight: 650; letter-spacing: -.01em; line-height: 1.2; color: var(--side-heading); }
 .brand-sub { font-size: 11px; color: var(--side-text); opacity: .55; font-family: var(--font-mono); letter-spacing: .08em; }
 
@@ -499,16 +503,68 @@ tbody tr:hover { background: var(--surface-2); }
   .dtype-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 1000px) {
-  .shell { grid-template-columns: 1fr; }
-  .sidebar { position: static; height: auto; padding: var(--s3) var(--s4); border-right: 0; border-bottom: 1px solid var(--side-line); }
-  .brand { padding-bottom: var(--s3); }
-  .nav-group { margin-top: var(--s2); }
-  .nav-group-label { display: none; }
-  .nav-list { flex-direction: row; gap: var(--s1); overflow-x: auto; padding-bottom: var(--s2); }
-  .nav-item { flex: none; white-space: nowrap; }
-  .nav-item.is-active::before { display: none; }
-  .nav-tag, .sidebar-foot { display: none; }
-  .topbar, .content, .footer { padding-left: var(--s4); padding-right: var(--s4); }
+  /* 窄屏：侧边栏改为左滑抽屉，顶部留一条常驻入口 */
+  .shell { display: block; }
+  .nav-root { display: block; }
+
+  .mobile-bar {
+    position: sticky; top: 0; z-index: 30;
+    display: flex; align-items: center; gap: var(--s2);
+    height: 52px; padding: 0 var(--s3);
+    background: var(--side-bg); color: var(--side-heading);
+    border-bottom: 1px solid var(--side-line);
+  }
+  .mb-trigger {
+    width: 36px; height: 36px; flex: none; display: grid; place-items: center;
+    background: transparent; border: 0; border-radius: 4px; color: inherit;
+  }
+  .mb-trigger:hover { background: var(--side-hover); }
+  .mb-title { font-size: var(--fs-3); font-weight: 650; letter-spacing: -.01em; color: var(--side-heading); }
+  .mb-current {
+    margin-left: auto; max-width: 46%; padding: 3px var(--s2);
+    font-size: var(--fs-1); color: var(--side-text);
+    background: var(--side-hover); border-radius: 3px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  .sidebar {
+    position: fixed; inset: 0 auto 0 0;
+    width: min(304px, 88vw); height: 100vh; height: 100dvh;
+    z-index: 41; overflow-y: auto;
+    padding: var(--s5) var(--s3) var(--s6);
+    border-right: 1px solid var(--side-line); border-bottom: 0;
+    transform: translateX(-100%);
+    transition: transform 220ms cubic-bezier(.4, 0, .2, 1);
+    box-shadow: 0 0 40px rgba(0, 0, 0, .35);
+  }
+  .sidebar[data-open="true"] { transform: translateX(0); }
+  .sb-close {
+    display: grid; place-items: center; flex: none;
+    width: 32px; height: 32px; margin-left: auto;
+    background: transparent; border: 0; border-radius: 4px; color: var(--side-text);
+  }
+  .sb-close:hover { background: var(--side-hover); color: var(--side-heading); }
+
+  .drawer-backdrop {
+    display: block; position: fixed; inset: 0; z-index: 40;
+    background: rgba(4, 7, 11, .64);
+    opacity: 0; pointer-events: none;
+    transition: opacity 220ms ease;
+  }
+  .drawer-backdrop[data-open="true"] { opacity: 1; pointer-events: auto; }
+
+  /* 抽屉内是纵向完整列表，分组标题与选中竖线都回来了 */
+  .nav-group { margin-top: var(--s5); }
+  .nav-group-label { display: block; }
+  .nav-list { flex-direction: column; gap: 1px; overflow: visible; padding-bottom: 0; }
+  .nav-item { flex: none; white-space: normal; padding: 9px var(--s2); }
+  .nav-item.is-active::before { display: block; }
+  .nav-tag { display: inline-block; }
+  .sidebar-foot { display: block; }
+
+  .topbar { position: static; }
+  .topbar-title { display: none; }
+  .content, .footer { padding-left: var(--s4); padding-right: var(--s4); }
   .split, .dual { grid-template-columns: 1fr; }
   .track + .track { border-left: 0; border-top: 1px solid var(--line); }
   .page-head { grid-template-columns: 1fr; gap: var(--s4); }

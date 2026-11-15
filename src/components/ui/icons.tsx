@@ -5,7 +5,7 @@ export type IconName =
   | "grid" | "spark" | "folder" | "check" | "bot" | "flow" | "globe" | "layers"
   | "box" | "truck" | "calculator" | "book" | "trend" | "database" | "file"
   | "report" | "shield" | "settings" | "arrow" | "plus" | "clock" | "alert" | "link"
-  | "list";
+  | "list" | "menu" | "close";
 
 const P: Record<IconName, string> = {
   grid: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
@@ -32,6 +32,8 @@ const P: Record<IconName, string> = {
   alert: "M12 4l9 16H3zM12 10v4M12 17h.01",
   link: "M10 13a5 5 0 007 0l2-2a5 5 0 00-7-7l-1 1M14 11a5 5 0 00-7 0l-2 2a5 5 0 007 7l1-1",
   list: "M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01",
+  menu: "M4 7h16M4 12h16M4 17h16",
+  close: "M6 6l12 12M18 6L6 18",
 };
 
 export type IconSize = 16 | 20 | 24;

@@ -68,6 +68,21 @@ describe("真实数据库读写链路（F-04 / F-05 / F-06 / F-07 / F-13）", ()
     expect((await listTasks(uid)).some((x) => x.id === t.id)).toBe(true);
   });
 
+  it("任务的验收标准字段真实落库并可读回", async () => {
+    const detail = "[测试] 三个平台各给一条来源链接，缺链接视为不合格";
+    const t = await createTask(uid, {
+      title: "[测试] 佣金对比（带验收标准）",
+      detail,
+      priority: 2,
+      source: "user",
+      dataType: "R",
+    });
+    createdIds.push(t.id);
+    expect(t.detail).toBe(detail);
+    const reread = (await listTasks(uid)).find((x) => x.id === t.id);
+    expect(reread?.detail).toBe(detail);
+  });
+
   it("项目列表包含新建项目", async () => {
     expect((await listProjects(uid)).some((p) => p.id === projectId)).toBe(true);
   });

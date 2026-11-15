@@ -125,6 +125,7 @@ export async function createTask(userId: string, input: CreateTaskInput) {
       userId,
       projectId: input.projectId ?? null,
       title: input.title,
+      detail: input.detail ?? "",
       priority: Math.round(input.priority),
       source: input.source,
       dataType: input.dataType,

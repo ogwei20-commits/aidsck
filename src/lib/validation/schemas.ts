@@ -32,6 +32,7 @@ export const patchProjectSchema = z
 
 export const createTaskSchema = z.object({
   title: z.string().trim().min(2, "任务标题至少 2 个字符").max(200, "任务标题最多 200 个字符"),
+  detail: z.string().trim().max(2000, "验收标准最多 2000 个字符").optional(),
   projectId: z.string().min(1).nullable().optional(),
   priority: z.number().min(1).max(5).optional().default(2),
   source: z.enum(["user", "assistant", "workflow"]).optional().default("user"),

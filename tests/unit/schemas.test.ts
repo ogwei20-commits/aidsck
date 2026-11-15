@@ -36,4 +36,22 @@ describe("Zod 输入校验（文档 6：统一验证）", () => {
   it("任务默认来源为 user", () => {
     expect(createTaskSchema.parse({ title: "整理佣金规则" }).source).toBe("user");
   });
+
+  it("任务的验收标准能通过校验并原样保留", () => {
+    const detail = "列出三个平台的佣金率、结算周期与退货扣费，标注数据来源链接";
+    const parsed = createTaskSchema.parse({ title: "对比平台佣金", detail });
+    expect(parsed.detail).toBe(detail);
+  });
+
+  it("不带验收标准时 detail 为 undefined，不伪造空串", () => {
+    expect(createTaskSchema.parse({ title: "对比平台佣金" }).detail).toBeUndefined();
+  });
+
+  it("拒绝超过 2000 字的验收标准", () => {
+    const result = createTaskSchema.safeParse({ title: "对比平台佣金", detail: "x".repeat(2001) });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].message).toContain("2000");
+    }
+  });
 });
