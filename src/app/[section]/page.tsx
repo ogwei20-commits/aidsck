@@ -6,6 +6,7 @@ import { AssistantWorkspace } from "@/components/modules/assistant";
 import { LineageView } from "@/components/modules/lineage";
 import { FileUpload } from "@/components/modules/file-upload";
 import { FileTable } from "@/components/modules/file-table";
+import { ReportExport } from "@/components/modules/report-export";
 import { WorkflowCenter } from "@/components/modules/workflow-center";
 import { getEnv } from "@/lib/config/env";
 import { getModule } from "@/modules/registry";
@@ -135,6 +136,16 @@ export default async function SectionPage({ params }: Ctx) {
         </div>
         {isFiles ? <FileTable rows={fileRows} /> : <ModuleTable def={def} rows={rows} />}
       </section>
+
+      {def.slug === "reports" && rows.length > 0 && (
+        <section className="section">
+          <div className="section-head">
+            <h2><span className="section-index">03 /</span>导出</h2>
+            <p>导出即成品：正文原样带出，末尾附来源清单与数据类型说明</p>
+          </div>
+          <ReportExport rows={rows} />
+        </section>
+      )}
     </>
   );
 }

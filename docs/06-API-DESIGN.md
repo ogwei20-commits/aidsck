@@ -131,15 +131,45 @@
 | 409 | `ARCHIVE_EMPTY` | 归档节点没有任何可归档内容 |
 | 422 | `WORKFLOW_DEFINITION_INVALID` | 定义结构不合法，拒绝启动 |
 
-## 4. 尚未实现（文档 6 剩余）
+## 4. 报告导出（P0-4，已实现）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/v1/reports/:id/export?format=md` | 下载 `.md`：正文原样 + 附录（来源清单 / 数据类型 / 导出信息） |
+| GET | `/api/v1/reports/:id/export?format=html` | 自包含 HTML 单页，带打印工具栏，Ctrl+P 存 PDF |
+| GET | `/api/v1/reports/:id/export?format=pdf` | 307 → `format=html&print=1`，由浏览器打印管线出 PDF |
+
+**为什么 PDF 不由服务端生成**：服务端出 PDF 要嵌入中文字体（体积 + 授权 + 跨平台字体缺失），
+而浏览器打印管线本身就是矢量输出、字体不丢、分页与页边距可调。第一阶段用后者，
+不引入 PDF 库、不调用付费服务。接口语义上 `format=pdf` 仍然可用（重定向 + 自动唤起打印）。
+
+**响应头**：
+
+- `Content-Type: text/markdown; charset=utf-8` / `text/html; charset=utf-8`
+- `Content-Disposition` 同时给 ASCII 兜底名与 `filename*=UTF-8''`（中文文件名不乱码）
+- HTML 通道带 `Content-Security-Policy: default-src 'none'; script-src 'nonce-…'`，
+  内联脚本只有「调 window.print()」这一件事，不放开 `unsafe-inline`
+
+**错误码**：
+
+| HTTP | code | 触发条件 |
+|---|---|---|
+| 404 | `REPORT_NOT_FOUND` | 报告不存在、不属于当前用户，或 id 不是合法 UUID |
+| 422 | `EXPORT_FORMAT_UNSUPPORTED` | `format` 不是 md / html / pdf |
+
+**正文渲染**：不引第三方 Markdown 库。正文先整体转义、再还原受控标签，
+只支持标题 / 列表 / 引用 / 粗体 / 行内代码 / 链接 / 表格 / 分隔线 / 代码块；
+`javascript:` 等协议直接退化为纯文本。报告正文来自 Agent 产出与用户输入，
+这一步是 XSS 的唯一防线。
+
+## 5. 尚未实现（文档 6 剩余）
 
 ```
 POST /api/v1/finance/calculate      （独立计算接口；页面内已可算）
 POST /api/v1/approvals/:id/decision （现用 POST /approvals 写入决定）
-GET  /api/v1/reports/:id/export     （报告已落库，导出未做，P0-4）
 ```
 
-## 5. 真实调用示例
+## 6. 真实调用示例
 
 ```bash
 # 健康检查
@@ -170,9 +200,15 @@ curl -s -X POST http://localhost:3000/api/v1/workflow-runs/<runId>/advance
 # 批准并继续
 curl -s -X POST http://localhost:3000/api/v1/workflow-runs/<runId>/decide \
   -H "Content-Type: application/json" -d '{"decision":"approve","note":"同意进入打样"}'
+
+# 导出报告（-OJ 按服务端给的文件名保存，中文名不乱码）
+curl -s -OJ "http://localhost:3000/api/v1/reports/<reportId>/export?format=md"
+
+# 打开可打印页面（浏览器里 Ctrl+P 存 PDF）
+curl -s "http://localhost:3000/api/v1/reports/<reportId>/export?format=html"
 ```
 
-## 6. Next.js 16 注意
+## 7. Next.js 16 注意
 
 动态段 `params` 是 `Promise`，必须 `await ctx.params`；使用原生 `Response.json()`；
 `GET` Route Handler 默认不缓存。代码已按内置版本文档实现，未使用旧版同步 API。
