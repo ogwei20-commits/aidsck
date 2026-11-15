@@ -59,7 +59,7 @@ export function getProviderStatus(): ProviderStatus {
         isReal: false,
         label: "AI 未配置",
         notice:
-          "AI_PROVIDER=none：AI 总管家尚未启用，不会调用任何模型、不会产生费用。任务创建与项目管理功能不受影响。Sprint 4 接入 Provider 适配器。",
+          "AI_PROVIDER=none：不调用任何模型、不产生任何费用。总管家仍会按内置流程模板拆解并派发，Agent 产出为「研究框架」——列出要回答的问题与要核对的项，不含研究结论。",
       };
   }
 }

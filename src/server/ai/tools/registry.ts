@@ -2,7 +2,7 @@ import type { PermissionLevel } from "@/types";
 
 /**
  * 文档 5.4：Agent 只能通过受控工具白名单访问系统能力，不能自行增加权限。
- * Sprint 1 只有 2 个工具真实可用，其余为占位（调用会返回未实现）。
+ * 只有登记为 available 的工具可用，其余调用一律返回「未实现」，不静默放行。
  */
 export interface ToolDefinition {
   name: string;

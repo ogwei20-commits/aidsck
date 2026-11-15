@@ -13,7 +13,13 @@ export async function GET() {
   const env = getEnv();
   const ai = getProviderStatus();
   const base = {
-    app: { name: "CrossBorder AI Workspace", phase: "Phase 1 / Sprint 1", env: env.APP_ENV },
+    app: {
+      name: "CrossBorder AI Workspace",
+      // 阶段写在这里是为了让设置页与验收脚本读到同一份事实；
+      // 改功能时记得同步，不要让它停在旧 Sprint 上
+      phase: "Phase 1 · 本地可用（19 模块 / 执行引擎 / 工作流 / 导出）",
+      env: env.APP_ENV,
+    },
     ai,
     checkedAt: new Date().toISOString(),
   };
