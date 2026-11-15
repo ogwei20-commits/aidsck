@@ -123,7 +123,7 @@ export function ModuleCreateForm({ def, refs }: { def: ModuleDef; refs: RefMap }
   );
 }
 
-/** 行内操作：改状态（L2 直接生效）、删除（L3 需审批） */
+/** 行内操作：改状态（L2 直接生效）、执行（任务专用）、删除（L3 需审批） */
 export function RowActions({
   def,
   id,
@@ -136,6 +136,44 @@ export function RowActions({
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [runResult, setRunResult] = useState<{
+    agentName: string;
+    mode: "framework" | "mock" | "model";
+    hasConclusion: boolean;
+    output: string;
+    disclaimer: string;
+    quality: { pass: boolean; issues: string[] };
+  } | null>(null);
+
+  async function run() {
+    setBusy(true);
+    setMessage("");
+    try {
+      const res = await fetch(`/api/v1/tasks/${id}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setMessage(json?.error?.message ?? "执行失败");
+        return;
+      }
+      setRunResult(json.data);
+      router.refresh();
+    } catch {
+      setMessage("网络异常，未完成执行");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const modeLabel =
+    runResult?.mode === "framework"
+      ? "研究框架"
+      : runResult?.mode === "mock"
+        ? "模拟调用"
+        : "模型输出";
 
   async function changeStatus(next: string) {
     setBusy(true);
@@ -169,6 +207,11 @@ export function RowActions({
 
   return (
     <div className="row-actions">
+      {def.slug === "tasks" && (
+        <button type="button" className="btn-mini" disabled={busy} onClick={() => void run()}>
+          {busy ? "执行中…" : "执行"}
+        </button>
+      )}
       {def.statusField && def.statusOptions && (
         <select
           aria-label="修改状态"
@@ -187,6 +230,34 @@ export function RowActions({
         删除
       </button>
       {message && <span className="row-error">{message}</span>}
+
+      {runResult && (
+        <div className="run-panel" role="dialog" aria-label="执行结果">
+          <div className="run-panel-head">
+            <div>
+              <strong>
+                {runResult.agentName} · {modeLabel}
+              </strong>
+              <span>
+                任务已进入「待审核」，你确认后才算完成
+                {runResult.quality.pass ? "" : ` · 质量检查：${runResult.quality.issues.join("；")}`}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="run-close"
+              onClick={() => setRunResult(null)}
+              aria-label="关闭执行结果"
+            >
+              ×
+            </button>
+          </div>
+          <div className="run-panel-body">
+            <pre>{runResult.output}</pre>
+          </div>
+          <p className="run-panel-note">{runResult.disclaimer}</p>
+        </div>
+      )}
     </div>
   );
 }

@@ -9,6 +9,8 @@ const EnvSchema = z.object({
   APP_USER_ID: z.string().min(1).default("00000000-0000-0000-0000-000000000001"),
   AI_PROVIDER: z.enum(["none", "mock", "openai-compatible"]).default("none"),
   APP_ENV: z.enum(["local", "test", "production"]).default("local"),
+  /** 上传根目录，相对项目根；测试时指到临时目录，避免污染真实文件 */
+  UPLOAD_DIR: z.string().min(1).default("storage/uploads"),
 });
 
 export type AppEnv = z.infer<typeof EnvSchema>;

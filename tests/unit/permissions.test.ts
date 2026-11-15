@@ -18,6 +18,29 @@ describe("权限分级与 AI 边界（文档 5.4 / 9.1）", () => {
     expect(() => assertAllowed("L2", "create")).not.toThrow();
   });
 
+  it("权限等级是累加的：L2 必须能读能分析，否则无法加工数据", () => {
+    expect(() => assertAllowed("L2", "read")).not.toThrow();
+    expect(() => assertAllowed("L2", "analyze")).not.toThrow();
+    expect(() => assertAllowed("L2", "archive")).toThrow();
+  });
+
+  it("L3 继承 L2 的能力，审批通过后才能真正落地", () => {
+    expect(() => assertAllowed("L3", "create")).not.toThrow();
+    expect(() => assertAllowed("L3", "calculate")).not.toThrow();
+    expect(() => assertAllowed("L3", "archive")).not.toThrow();
+  });
+
+  it("L1 不得越级写入或归档", () => {
+    expect(() => assertAllowed("L1", "create")).toThrow();
+    expect(() => assertAllowed("L1", "archive")).toThrow();
+  });
+
+  it("L4 即使对只读动作也一律拒绝", () => {
+    for (const action of ["read", "list", "analyze", "create", "archive"]) {
+      expect(() => assertAllowed("L4", action)).toThrow();
+    }
+  });
+
   it("外部调用工具即使在 L3 也被禁止", () => {
     expect(isToolAllowed("external_call", "L3")).toBe(false);
   });
@@ -37,10 +60,10 @@ describe("权限分级与 AI 边界（文档 5.4 / 9.1）", () => {
     expect(status.mode).toBe("none");
   });
 
-  it("六个核心 Agent 均为规划态，且执行限制齐备", () => {
+  it("六个核心 Agent 已接入调度，且执行限制齐备", () => {
     expect(AGENT_REGISTRY).toHaveLength(6);
     for (const agent of AGENT_REGISTRY) {
-      expect(agent.status).toBe("planned");
+      expect(agent.status).toBe("active");
       expect(agent.executionLimit).toBeGreaterThan(0);
       expect(agent.maxModelCalls).toBeGreaterThan(0);
       expect(agent.timeoutSeconds).toBeGreaterThan(0);

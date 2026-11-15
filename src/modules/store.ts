@@ -11,6 +11,18 @@ import type { ModuleDef, ModuleField } from "./types";
  */
 
 const snake = (s: string) => s.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
+const camel = (s: string) => s.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+
+/**
+ * 数据库返回的是 snake_case 列名，而模块定义（fields / columns）用 camelCase。
+ * 读取时统一转成 camelCase，否则 `row["commissionRate"]` 永远取不到
+ * `commission_rate`，表格会静默显示成「—」。
+ */
+function toCamelRow(row: Row): Row {
+  const out: Row = {};
+  for (const [key, value] of Object.entries(row)) out[camel(key)] = value;
+  return out;
+}
 
 function tableIdent(def: ModuleDef): SQL {
   if (!ALLOWED_TABLES.has(def.table)) {
@@ -59,7 +71,7 @@ export async function listRows(def: ModuleDef, userId: string, limit = 200): Pro
   const result = await db.execute(
     sql`select * from ${tableIdent(def)} where ${scopeWhere(def, userId)} order by ${order} limit ${limit}`,
   );
-  return result as unknown as Row[];
+  return (result as unknown as Row[]).map(toCamelRow);
 }
 
 export async function getRow(def: ModuleDef, userId: string, id: string): Promise<Row | null> {
@@ -68,7 +80,7 @@ export async function getRow(def: ModuleDef, userId: string, id: string): Promis
     sql`select * from ${tableIdent(def)} where "id" = ${id} and ${scopeWhere(def, userId)} limit 1`,
   );
   const rows = result as unknown as Row[];
-  return rows[0] ?? null;
+  return rows[0] ? toCamelRow(rows[0]) : null;
 }
 
 /** 缺必填项时返回缺失字段的中文名，交由 API 层转成 422 */
@@ -104,7 +116,7 @@ export async function createRow(def: ModuleDef, userId: string, input: Row): Pro
     sql`insert into ${tableIdent(def)} (${columnList}) values (${valueList}) returning *`,
   );
   const rows = result as unknown as Row[];
-  return rows[0];
+  return rows[0] ? toCamelRow(rows[0]) : rows[0];
 }
 
 export async function updateRow(def: ModuleDef, userId: string, id: string, input: Row): Promise<Row | null> {
@@ -129,7 +141,7 @@ export async function updateRow(def: ModuleDef, userId: string, id: string, inpu
     sql`update ${tableIdent(def)} set ${setList} where "id" = ${id} and ${scopeWhere(def, userId)} returning *`,
   );
   const rows = result as unknown as Row[];
-  return rows[0] ?? null;
+  return rows[0] ? toCamelRow(rows[0]) : null;
 }
 
 export async function deleteRow(def: ModuleDef, userId: string, id: string): Promise<boolean> {
@@ -150,12 +162,12 @@ export async function refOptions(
   if (!ALLOWED_TABLES.has(table)) return [];
   const db = getDb();
   const result = await db.execute(
-    sql`select "id", ${columnIdent(labelField)} from ${sql.raw(`"${table}"`)}
+    sql`select "id", ${columnIdent(snake(labelField))} as "label" from ${sql.raw(`"${table}"`)}
         where (user_id = ${userId} or user_id is null)
-        order by ${columnIdent(labelField)} asc limit 200`,
+        order by ${columnIdent(snake(labelField))} asc limit 200`,
   );
   const rows = result as unknown as Row[];
-  return rows.map((r) => ({ value: String(r.id), label: String(r[labelField] ?? "未命名") }));
+  return rows.map((r) => ({ value: String(r.id), label: String(r.label ?? "未命名") }));
 }
 
 /** 模块行数，用于首页与导航角标 */

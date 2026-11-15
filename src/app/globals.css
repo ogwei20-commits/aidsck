@@ -545,3 +545,93 @@ tbody tr:hover { background: var(--surface-2); }
 @media (max-width: 720px) {
   .finance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ── 文件上传 ─────────────────────────────────────────────── */
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+.uploader { display: flex; flex-direction: column; gap: var(--s3); }
+
+.dropzone {
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: var(--s6) var(--s4);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.dropzone:hover, .dropzone:focus-visible { border-color: var(--accent); outline: none; }
+.dropzone.is-dragging { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone.is-picked { border-style: solid; border-color: var(--accent); }
+.dropzone-title { margin: 0; font-size: var(--fs-3); font-weight: 600; color: var(--ink); }
+.dropzone-hint { margin: 6px 0 0; font-size: var(--fs-2); color: var(--muted); }
+
+.uploader-row { display: flex; align-items: flex-end; gap: var(--s3); flex-wrap: wrap; }
+.uploader-purpose { flex: 1 1 280px; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-2); color: var(--text); }
+.uploader-purpose input {
+  border: 1px solid var(--line); border-radius: 4px; background: var(--bg);
+  padding: 9px var(--s3); font-size: var(--fs-2); color: var(--ink); font-family: inherit;
+}
+.uploader-purpose input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.uploader-msg { margin: 0; font-size: var(--fs-2); padding: var(--s2) var(--s3); border-radius: 4px; }
+.uploader-msg.is-error { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+.uploader-msg.is-ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.uploader-foot { margin: 0; font-size: 11px; color: var(--muted); line-height: 1.7; }
+
+.btn-mini {
+  display: inline-block; padding: 3px 9px; border-radius: 3px;
+  border: 1px solid var(--line); background: var(--surface);
+  font-size: 11px; color: var(--text); text-decoration: none; cursor: pointer;
+}
+.btn-mini:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── 执行结果浮层 ─────────────────────────────────────────── */
+.run-panel {
+  position: fixed; right: var(--s5); bottom: var(--s5); z-index: 60;
+  width: min(520px, calc(100vw - 2 * var(--s4)));
+  max-height: min(70vh, 620px);
+  display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.run-panel-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3);
+  padding: var(--s3) var(--s4); border-bottom: 1px solid var(--line);
+}
+.run-panel-head strong { font-size: var(--fs-2); color: var(--ink); }
+.run-panel-head span { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
+.run-panel-body { overflow: auto; padding: var(--s4); }
+.run-panel-body pre {
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+  font-family: var(--font-mono); font-size: 11px; line-height: 1.75; color: var(--text);
+}
+.run-panel-note {
+  margin: 0; padding: var(--s2) var(--s4); border-top: 1px solid var(--line);
+  font-size: 11px; color: var(--muted);
+}
+.run-close {
+  border: 0; background: transparent; color: var(--muted); cursor: pointer;
+  font-size: 16px; line-height: 1; padding: 2px 4px;
+}
+.run-close:hover { color: var(--ink); }
+
+@media (max-width: 720px) {
+  .run-panel { left: var(--s3); right: var(--s3); bottom: var(--s3); width: auto; }
+}
+
+/* ── 顶栏在窄屏下不得把文字压成竖排 ─────────────────────── */
+.chip { white-space: nowrap; flex: none; }
+
+@media (max-width: 720px) {
+  .topbar {
+    flex-wrap: wrap; gap: var(--s2);
+    padding: var(--s2) var(--s4); min-height: 0;
+  }
+  .topbar-title { display: none; }
+  .topbar-right { width: 100%; flex-wrap: wrap; gap: var(--s2); }
+  .chip { font-size: 10px; padding: 2px 7px; }
+}

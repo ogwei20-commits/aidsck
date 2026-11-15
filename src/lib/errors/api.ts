@@ -52,3 +52,14 @@ export async function readJson(request: Request): Promise<unknown> {
     throw new AppError("INVALID_JSON", "请求体不是合法 JSON", 400);
   }
 }
+
+/** 允许空 body 的接口：无 body 视为 {}，有 body 但格式错误仍报 400 */
+export async function readOptionalJson(request: Request): Promise<unknown> {
+  const text = await request.text();
+  if (!text.trim()) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new AppError("INVALID_JSON", "请求体不是合法 JSON", 400);
+  }
+}

@@ -5,7 +5,7 @@ import type { NavItem } from "@/types";
  *
  * 状态含义（不允许含糊）：
  * - ready   该模块有真实增删改查，数据落 PostgreSQL，刷新不丢
- * - partial 有真实数据，但能力不完整（例如文件中心只支持元数据登记，不支持上传）
+ * - partial 有真实数据，但能力不完整（例如工作流中心只能编辑流程定义，执行引擎尚未实现）
  *
  * 说明：文档 1.2 列的「规划中」能力（真实店铺管理、订单/库存同步、自动发布、
  * 广告投放、客服、自动退款采购、多租户、插件市场等）不属于这 19 个模块，
@@ -18,9 +18,9 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { slug: "assistant", label: "AI 总管家", group: "总览", status: "ready", sprint: "规则模板拆解", description: "把一句目标拆成可执行任务" },
 
   { slug: "projects", label: "项目中心", group: "执行", status: "ready", sprint: "可增删改", description: "一次跨境尝试一个项目" },
-  { slug: "tasks", label: "任务中心", group: "执行", status: "ready", sprint: "可增删改", description: "每件事落到一条任务" },
-  { slug: "agents", label: "Agent 中心", group: "执行", status: "ready", sprint: "注册与权限", description: "角色、工具白名单、权限等级" },
-  { slug: "workflows", label: "工作流中心", group: "执行", status: "ready", sprint: "定义与重跑", description: "把研究步骤固化成流程" },
+  { slug: "tasks", label: "任务中心", group: "执行", status: "ready", sprint: "创建与执行", description: "每件事落到一条任务，可派 Agent 执行" },
+  { slug: "agents", label: "Agent 中心", group: "执行", status: "ready", sprint: "注册与执行", description: "角色、工具白名单、权限等级，可直接派活" },
+  { slug: "workflows", label: "工作流中心", group: "执行", status: "partial", sprint: "仅定义", description: "流程定义可编辑；执行引擎尚未实现" },
 
   { slug: "market", label: "市场研究", group: "研究", status: "ready", sprint: "问题到结论", description: "问题、资料、结论、来源" },
   { slug: "platforms", label: "平台比较", group: "研究", status: "ready", sprint: "佣金与门槛", description: "平台档案与适配评分" },
@@ -31,7 +31,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { slug: "learning", label: "学习中心", group: "沉淀与治理", status: "ready", sprint: "计划与进度", description: "学习计划与周投入" },
   { slug: "growth", label: "成长档案", group: "沉淀与治理", status: "ready", sprint: "能力与下一步", description: "能力等级与下一步动作" },
   { slug: "knowledge", label: "知识库", group: "沉淀与治理", status: "ready", sprint: "可检索条目", description: "结论、规则、踩过的坑" },
-  { slug: "files", label: "文件中心", group: "沉淀与治理", status: "partial", sprint: "仅元数据", description: "文件元数据与本地路径登记" },
+  { slug: "files", label: "文件中心", group: "沉淀与治理", status: "ready", sprint: "上传与下载", description: "原件上传、SHA-256 校验和与来源追溯" },
   { slug: "reports", label: "报告中心", group: "沉淀与治理", status: "ready", sprint: "草稿到定稿", description: "带来源的研究报告" },
   { slug: "lineage", label: "数据溯源", group: "沉淀与治理", status: "ready", sprint: "数据类型与留痕", description: "每条数据的来源与改动记录" },
   { slug: "approvals", label: "安全中心", group: "沉淀与治理", status: "ready", sprint: "审批与日志", description: "L3 操作的审批闸门" },

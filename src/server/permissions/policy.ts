@@ -6,21 +6,34 @@ import { AppError } from "@/lib/errors/api";
 import type { PermissionLevel } from "@/types";
 
 /**
- * 文档 9.1 权限分级（Sprint 1 最小可验证骨架）
+ * 文档 9.1 权限分级
  * L1 查询/整理/分析 · L2 生成草稿/计算/保存 · L3 经批准后执行外部操作 · L4 禁止 AI 自主执行
+ *
+ * 关键：等级是「累加」而非「互斥」。L2 必然能读能分析，否则它连自己要加工的数据都读不到；
+ * L3 必然能做 L2 的事，否则审批通过后仍无法落地。
+ * L4 是禁区：任何动作都不允许，Agent 不得自行提权到 L4。
  */
-const ALLOWED: Record<PermissionLevel, readonly string[]> = {
+const LEVEL_ACTIONS: Record<PermissionLevel, readonly string[]> = {
   L1: ["read", "list", "analyze"],
   L2: ["create", "update", "calculate", "save_draft"],
   L3: ["archive", "export", "external_call", "publish"],
   L4: [],
 };
 
+const LADDER: readonly PermissionLevel[] = ["L1", "L2", "L3", "L4"];
+
+/** 某等级实际拥有的全部动作 = 自身与所有低等级的动作之和 */
+export function actionsFor(level: PermissionLevel): readonly string[] {
+  if (level === "L4") return [];
+  const index = LADDER.indexOf(level);
+  return LADDER.slice(0, index + 1).flatMap((l) => LEVEL_ACTIONS[l]);
+}
+
 export function assertAllowed(level: PermissionLevel, action: string): void {
   if (level === "L4") {
     throw new AppError("PERMISSION_DENIED", `L4 操作禁止 AI 自主执行：${action}`, 403);
   }
-  if (!ALLOWED[level].includes(action)) {
+  if (!actionsFor(level).includes(action)) {
     throw new AppError(
       "PERMISSION_DENIED",
       `权限等级 ${level} 不允许执行 ${action}`,

@@ -37,6 +37,13 @@ function renderCell(col: ListColumn, row: Row) {
 
   if (col.kind === "mono") {
     if (col.name.endsWith("At") && raw) return <span className="mono">{formatDateTime(String(raw))}</span>;
+    // numeric 列会带出 8 位小数（如 15.00000000），去掉无意义的尾随零
+    if (typeof raw === "number" || (typeof raw === "string" && /^-?\d+\.\d+$/.test(raw))) {
+      const n = Number(raw);
+      if (Number.isFinite(n)) {
+        return <span className="mono">{n.toLocaleString("zh-CN", { maximumFractionDigits: 6 })}</span>;
+      }
+    }
     return <span className="mono">{raw === null || raw === undefined || raw === "" ? "—" : String(raw)}</span>;
   }
 

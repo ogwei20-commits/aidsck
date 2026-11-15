@@ -45,6 +45,51 @@ export const createApprovalSchema = z.object({
   note: z.string().trim().max(500).optional().default(""),
 });
 
+/** 执行请求：可指定 Agent，缺省用任务上已分配的 Agent */
+export const runTaskSchema = z.object({
+  agentSlug: z
+    .string()
+    .trim()
+    .regex(/^[a-z0-9-]{2,60}$/, "Agent 标识只允许小写字母、数字与连字符")
+    .optional(),
+});
+
+/** 文件上传的表单字段（文件本体单独从 FormData 取，不进 Zod） */
+export const uploadFileSchema = z.object({
+  purpose: z.string().trim().max(200, "用途说明最多 200 个字符").optional().default(""),
+});
+
+export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+
+/** 允许上传的类型白名单：扩展名 → 允许的 MIME（双重校验，防伪装） */
+export const UPLOAD_WHITELIST: Record<string, readonly string[]> = {
+  pdf: ["application/pdf"],
+  docx: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+  xlsx: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+  pptx: ["application/vnd.openxmlformats-officedocument.presentationml.presentation"],
+  csv: ["text/csv", "application/csv", "text/plain"],
+  md: ["text/markdown", "text/plain"],
+  txt: ["text/plain"],
+  png: ["image/png"],
+  jpg: ["image/jpeg"],
+  jpeg: ["image/jpeg"],
+  webp: ["image/webp"],
+  zip: ["application/zip", "application/x-zip-compressed"],
+};
+
+/** Agent 直接执行：给 taskId 就执行该任务，只给 target 就先建任务再执行 */
+export const runAgentSchema = z
+  .object({
+    taskId: z.string().uuid("taskId 必须是合法 UUID").optional(),
+    target: z.string().trim().min(2, "目标至少 2 个字符").max(500, "目标最多 500 个字符").optional(),
+  })
+  .refine((v) => Boolean(v.taskId || v.target), {
+    message: "必须提供 taskId 或 target 其中之一",
+  });
+
+export type RunAgentInput = z.infer<typeof runAgentSchema>;
+
+export type RunTaskInput = z.infer<typeof runTaskSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type PatchProjectInput = z.infer<typeof patchProjectSchema>;
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;

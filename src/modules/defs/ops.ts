@@ -216,21 +216,19 @@ export const OPS_MODULES: ModuleDef[] = [
     table: "files",
     titleField: "filename",
     subtitleField: "purpose",
-    purpose: "资料要能找回来：文件元数据入库，原件存本机 storage/uploads，路径可追溯。",
-    createLabel: "登记文件",
-    emptyHint: "第一阶段支持登记元数据（文件名、类型、路径）与本地存放，拖拽上传在 Sprint 3 补齐。",
-    fields: [
-      { name: "filename", label: "文件名", kind: "text", required: true, placeholder: "供应商报价单-2026-03.pdf" },
-      { name: "mimeType", label: "类型", kind: "text", required: true, placeholder: "application/pdf" },
-      { name: "sizeBytes", label: "大小（字节）", kind: "int", default: "0" },
-      { name: "storagePath", label: "存放路径", kind: "text", required: true, placeholder: "uploads/quote-2026-03.pdf" },
-      { name: "purpose", label: "用途", kind: "text", placeholder: "供应商比价" },
-    ],
+    purpose: "资料要能找回来：原件存本机磁盘，元数据与校验和入库，每条都能追溯到来源。",
+    createLabel: "上传文件",
+    emptyHint:
+      "供应商报价单、平台费率截图、竞品评论导出——这些原始材料放在这里，后面写报告时才能追溯来源。",
+    // 文件由专用上传控件创建（文件名、类型、大小、路径、校验和均由系统写入），
+    // 因此这里不再提供可手填的字段，避免用户手动伪造元数据。
+    fields: [],
     columns: [
       { name: "filename", label: "文件" },
       { name: "mimeType", label: "类型", kind: "mono" },
       { name: "sizeBytes", label: "大小", kind: "mono" },
-      { name: "createdAt", label: "登记", kind: "mono" },
+      { name: "purpose", label: "用途" },
+      { name: "createdAt", label: "上传", kind: "mono" },
     ],
   },
 ];

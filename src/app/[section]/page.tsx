@@ -4,6 +4,8 @@ import { ModuleTable } from "@/components/modules/module-table";
 import { FinanceResults } from "@/components/modules/finance-result";
 import { AssistantWorkspace } from "@/components/modules/assistant";
 import { LineageView } from "@/components/modules/lineage";
+import { FileUpload } from "@/components/modules/file-upload";
+import { FileTable } from "@/components/modules/file-table";
 import { getEnv } from "@/lib/config/env";
 import { getModule } from "@/modules/registry";
 import { listRows, refOptions, type Row } from "@/modules/store";
@@ -38,6 +40,19 @@ export default async function SectionPage({ params }: Ctx) {
     }
   }
 
+  const isFiles = def.slug === "files";
+  const fileRows = isFiles
+    ? rows.map((r) => ({
+        id: String(r.id),
+        filename: String(r.filename ?? ""),
+        mimeType: String(r.mimeType ?? ""),
+        sizeBytes: Number(r.sizeBytes ?? 0),
+        purpose: String(r.purpose ?? ""),
+        checksum: String(r.checksum ?? ""),
+        createdAt: r.createdAt instanceof Date ? r.createdAt : String(r.createdAt ?? ""),
+      }))
+    : [];
+
   return (
     <>
       <header className="page-head">
@@ -63,9 +78,13 @@ export default async function SectionPage({ params }: Ctx) {
       <section className="section">
         <div className="section-head">
           <h2><span className="section-index">01 /</span>{def.createLabel}</h2>
-          <p>提交后立即写入 PostgreSQL，可刷新验证</p>
+          <p>
+            {isFiles
+              ? "原件存本机磁盘，元数据与 SHA-256 校验和入库"
+              : "提交后立即写入 PostgreSQL，可刷新验证"}
+          </p>
         </div>
-        <ModuleCreateForm def={def} refs={refs} />
+        {isFiles ? <FileUpload /> : <ModuleCreateForm def={def} refs={refs} />}
       </section>
 
       {def.slug === "finance" && rows.length > 0 && (
@@ -80,10 +99,10 @@ export default async function SectionPage({ params }: Ctx) {
 
       <section className="section">
         <div className="section-head">
-          <h2><span className="section-index">{def.slug === "finance" ? "03" : "02"} /</span>全部记录</h2>
-          <p>{def.scope === "shared" ? "含系统内置项" : "仅当前用户数据"}</p>
+          <h2><span className="section-index">{def.slug === "finance" ? "03" : "02"} /</span>{isFiles ? "已上传文件" : "全部记录"}</h2>
+          <p>{isFiles ? "下载会校验路径，磁盘缺件时明确报错" : def.scope === "shared" ? "含系统内置项" : "仅当前用户数据"}</p>
         </div>
-        <ModuleTable def={def} rows={rows} />
+        {isFiles ? <FileTable rows={fileRows} /> : <ModuleTable def={def} rows={rows} />}
       </section>
     </>
   );

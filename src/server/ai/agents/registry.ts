@@ -2,9 +2,10 @@ import type { PermissionLevel } from "@/types";
 
 /**
  * 文档 5.1/5.2：第一阶段六个核心 Agent 的标准定义。
- * 注意：这是「注册定义」，静态配置，尚未落库、尚未接入调度器。
- * Sprint 4 才会把 agents / agent_runs / agent_messages 建表并启用调度。
- * 首页展示时必须标注「规划中」，不得让用户误以为 Agent 已可执行。
+ *
+ * 状态说明：这六个 Agent 已落库（agents 表）并接入调度器，
+ * 可通过 POST /api/v1/agents/:slug/run 或 POST /api/v1/tasks/:id/run 真实执行。
+ * 本文件是「默认定义 / 迁移参照」，运行时以数据库中 agents 表为准。
  */
 export interface AgentDefinition {
   agentId: string;
@@ -27,10 +28,10 @@ const BASE_LIMITS = {
   executionLimit: 5,
   maxModelCalls: 10,
   timeoutSeconds: 120,
-  status: "planned" as const,
-  version: "0.1.0-plan",
-  inputSchema: "AgentTaskInput (Sprint 4 定义)",
-  outputSchema: "AgentTaskOutput (Sprint 4 定义)",
+  status: "active" as const,
+  version: "1.0.0",
+  inputSchema: "AgentTaskInput { taskId, target? }",
+  outputSchema: "AgentTaskOutput { mode, output, hasConclusion }",
 };
 
 export const AGENT_REGISTRY: readonly AgentDefinition[] = [
