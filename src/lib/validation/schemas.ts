@@ -128,7 +128,62 @@ export const patchMilestoneSchema = z
     message: "至少提供 done 或 title 中的一项",
   });
 
-export type StartWorkflowInput = z.infer<typeof startWorkflowSchema>;export type DecideWorkflowInput = z.infer<typeof decideWorkflowSchema>;
+export type StartWorkflowInput = z.infer<typeof startWorkflowSchema>;
+export type DecideWorkflowInput = z.infer<typeof decideWorkflowSchema>;
+
+/* ────────────────────────────────────────────────────────────
+ * 证据关联（citations）
+ *
+ * 来源链接只接受 http/https。报告会被导出成 .md 与可打印 HTML，
+ * 如果把 javascript: / data: 存进来，导出文件在别人机器上打开就成了注入面。
+ * 允许为空——线下访谈、内部数据这类来源没有链接，但仍应登记标题与出处。
+ * ──────────────────────────────────────────────────────────── */
+export const citationUrlSchema = z
+  .string()
+  .trim()
+  .max(2000, "链接最多 2000 个字符")
+  .refine(
+    (v) => v === "" || /^https?:\/\/[^\s]+$/i.test(v),
+    "链接必须以 http:// 或 https:// 开头",
+  );
+
+export const createCitationSchema = z.object({
+  reportId: z.string().uuid("reportId 必须是合法 UUID"),
+  sourceTitle: z.string().trim().min(2, "来源名称至少 2 个字符").max(200, "来源名称最多 200 个字符"),
+  sourceUrl: citationUrlSchema.optional().default(""),
+  quote: z.string().trim().max(2000, "引文最多 2000 个字符").optional().default(""),
+  dataType: dataTypeSchema.optional().default("U"),
+});
+
+/* ────────────────────────────────────────────────────────────
+ * 财务计算接口
+ *
+ * 页面上的输入框允许留空（按 0 处理），接口也一样：缺省字段按 0，
+ * 但费率必须落在 0–100，售价必须 ≥ 0——否则算出来的净利没有意义。
+ * 数值上限拦的是「手滑多打几个 0」，不是业务限制。
+ * ──────────────────────────────────────────────────────────── */
+const moneyField = (label: string) =>
+  z.number().finite(`${label}必须是数字`).min(0, `${label}不能为负数`).max(1_000_000_000, `${label}超出可计算范围`).optional().default(0);
+const rateField = (label: string) =>
+  z.number().finite(`${label}必须是数字`).min(0, `${label}不能为负数`).max(100, `${label}不能超过 100%`).optional().default(0);
+
+export const calculateFinanceSchema = z.object({
+  name: z.string().trim().max(120, "方案名称最多 120 个字符").optional().default(""),
+  currency: z.string().trim().min(1).max(8).optional().default("USD"),
+  sellPrice: z.number().finite("售价必须是数字").min(0, "售价不能为负数").max(1_000_000_000).optional().default(0),
+  purchaseCost: moneyField("采购成本"),
+  shippingCost: moneyField("运费"),
+  commissionRate: rateField("平台佣金率"),
+  paymentRate: rateField("支付费率"),
+  adCost: moneyField("单件广告费"),
+  otherCost: moneyField("其他单件成本"),
+  fixedCost: moneyField("固定投入"),
+  expectedOrders: z.number().int("预计单量必须是整数").min(0).max(100_000_000).optional().default(0),
+  /** 自定义档位；不传则按基准价自动生成五档 */
+  prices: z.array(z.number().finite().positive("档位价格必须大于 0")).min(1).max(9).optional(),
+});
+
+export type CalculateFinanceInput = z.infer<typeof calculateFinanceSchema>;
 export type ResumeWorkflowInput = z.infer<typeof resumeWorkflowSchema>;
 
 export type RunTaskInput = z.infer<typeof runTaskSchema>;
@@ -136,3 +191,4 @@ export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type PatchProjectInput = z.infer<typeof patchProjectSchema>;
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;
 export type CreateApprovalInput = z.infer<typeof createApprovalSchema>;
+export type CreateCitationInput = z.infer<typeof createCitationSchema>;

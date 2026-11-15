@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import Link from "next/link";
+import { Fragment, useState } from "react";
 
 /** 与服务端 RunSummary 对齐的客户端副本（不把服务端模块打进浏览器包） */
 export type RunMode = "framework" | "mock" | "model" | "none";
@@ -81,6 +82,21 @@ const STATUS_TONE: Record<string, string> = {
 
 type Filter = "all" | "model" | "framework" | "failed";
 
+export interface RunQueryState {
+  q: string;
+  mode: string;
+  status: string;
+  agent: string;
+}
+
+export interface RunPageInfo {
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  /** 当前筛选命中的总数 */
+  total: number;
+}
+
 function fmtTime(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -123,42 +139,38 @@ export function AgentRuns({
   runs,
   stats,
   currentMode,
+  query,
+  pageInfo,
+  agents,
 }: {
   runs: RunSummary[];
   stats: RunStats;
   currentMode: string;
+  query: RunQueryState;
+  pageInfo: RunPageInfo;
+  agents: { slug: string; name: string; count: number }[];
 }) {
-  const [filter, setFilter] = useState<Filter>("all");
-  const [agentSlug, setAgentSlug] = useState<string>("all");
   const [openId, setOpenId] = useState<string | null>(null);
   const [details, setDetails] = useState<Record<string, RunDetail>>({});
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
 
-  /**
-   * Agent 下拉的选项从已有记录里生成，不查 Agent 注册表：
-   * 列出「注册了但一次没跑过」的角色只会让人以为筛选坏了。
-   */
-  const agentOptions = useMemo(() => {
-    const map = new Map<string, { slug: string; name: string; count: number }>();
-    for (const run of runs) {
-      const key = run.agentSlug || run.agentName;
-      const found = map.get(key);
-      if (found) found.count += 1;
-      else map.set(key, { slug: key, name: run.agentName, count: 1 });
-    }
-    return [...map.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "zh-CN"));
-  }, [runs]);
+  /** 服务端已完成筛选与分页，这里不再二次过滤——客户端过滤只能筛当前页，数字会对不上 */
+  const shown = runs;
 
-  const shown = useMemo(() => {
-    let list = runs;
-    if (filter === "model") list = list.filter((r) => r.mode === "model");
-    else if (filter === "framework") list = list.filter((r) => r.mode === "framework");
-    else if (filter === "failed") list = list.filter((r) => r.status === "failed");
-    if (agentSlug !== "all") list = list.filter((r) => (r.agentSlug || r.agentName) === agentSlug);
-    return list;
-  }, [runs, filter, agentSlug]);
+  /** 保留当前筛选条件，只改指定项 */
+  function hrefWith(patch: Partial<RunQueryState> & { page?: number }): string {
+    const next = { ...query, ...patch };
+    const params = new URLSearchParams();
+    if (next.q) params.set("q", next.q);
+    if (next.mode && next.mode !== "all") params.set("mode", next.mode);
+    if (next.status && next.status !== "all") params.set("status", next.status);
+    if (next.agent) params.set("agent", next.agent);
+    if (patch.page && patch.page > 1) params.set("page", String(patch.page));
+    const s = params.toString();
+    return s ? `/runs?${s}` : "/runs";
+  }
 
   const counts: Record<Filter, number> = {
     all: stats.total,
@@ -166,6 +178,17 @@ export function AgentRuns({
     framework: stats.framework,
     failed: stats.failed,
   };
+
+  const hasFilter = Boolean(query.q) || query.mode !== "all" || query.status !== "all" || query.agent !== "";
+
+  /** 页码窗口：当前页在中间，最多 7 个，避免记录多了以后页码铺满一行 */
+  const pageWindow = (() => {
+    const total = pageInfo.totalPages;
+    const current = pageInfo.page;
+    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+    const start = Math.max(1, Math.min(current - 3, total - 6));
+    return Array.from({ length: 7 }, (_, i) => start + i);
+  })();
 
   async function toggle(run: RunSummary) {
     if (openId === run.id) {
@@ -258,50 +281,73 @@ export function AgentRuns({
         <div className="runs-filters" role="tablist" aria-label="按执行方式筛选">
           {(
             [
-              ["all", "全部"],
-              ["model", "真实模型"],
-              ["framework", "框架模板"],
-              ["failed", "失败"],
-            ] as [Filter, string][]
-          ).map(([key, label]) => (
-            <button
+              ["all", "全部", "all"],
+              ["model", "真实模型", "model"],
+              ["framework", "框架模板", "framework"],
+              ["failed", "失败", "failed"],
+            ] as [Filter, string, string][]
+          ).map(([key, label, mode]) => (
+            <Link
               key={key}
-              type="button"
+              href={hrefWith({ mode, page: 1 })}
               role="tab"
-              aria-selected={filter === key}
-              className={`runs-filter ${filter === key ? "is-active" : ""}`}
-              onClick={() => setFilter(key)}
+              aria-selected={query.mode === mode}
+              className={`runs-filter ${query.mode === mode ? "is-active" : ""}`}
+              scroll={false}
             >
               {label}
               <em>{counts[key]}</em>
-            </button>
+            </Link>
           ))}
         </div>
         <p className="runs-hint">点任意一行展开输入与产出全文</p>
       </div>
 
-      {agentOptions.length > 1 && (
-        <div className="runs-agent-bar">
-          <label htmlFor="runs-agent-filter">按 Agent</label>
-          <select
-            id="runs-agent-filter"
-            value={agentSlug}
-            onChange={(e) => setAgentSlug(e.target.value)}
-          >
-            <option value="all">全部 Agent（{runs.length}）</option>
-            {agentOptions.map((o) => (
-              <option key={o.slug} value={o.slug}>
-                {o.name}（{o.count}）
-              </option>
-            ))}
-          </select>
-          {agentSlug !== "all" && (
-            <button type="button" className="runs-filter" onClick={() => setAgentSlug("all")}>
-              清除 Agent 筛选
-            </button>
-          )}
-        </div>
-      )}
+      {/* 搜索与状态、Agent 筛选走 GET：刷新、分享链接、翻页都能带上条件 */}
+      <form className="runs-query" method="get" action="/runs">
+        {query.mode !== "all" && <input type="hidden" name="mode" value={query.mode} />}
+        <input
+          className="runs-search"
+          type="search"
+          name="q"
+          defaultValue={query.q}
+          maxLength={100}
+          placeholder="搜任务标题、Agent 或失败原因"
+          aria-label="搜索执行记录"
+        />
+        <select
+          name="status"
+          defaultValue={query.status}
+          aria-label="按状态筛选"
+          onChange={(e) => e.currentTarget.form?.requestSubmit()}
+        >
+          <option value="all">全部状态</option>
+          <option value="succeeded">成功</option>
+          <option value="failed">失败</option>
+          <option value="running">执行中</option>
+        </select>
+        <select
+          name="agent"
+          defaultValue={query.agent}
+          aria-label="按 Agent 筛选"
+          onChange={(e) => e.currentTarget.form?.requestSubmit()}
+        >
+          <option value="">全部 Agent</option>
+          {agents.map((o) => (
+            <option key={o.slug} value={o.slug}>
+              {o.name}（{o.count}）
+            </option>
+          ))}
+        </select>
+        <button className="btn-mini" type="submit">
+          筛选
+        </button>
+        {hasFilter && (
+          <Link className="runs-clear" href="/runs" scroll={false}>
+            清除
+          </Link>
+        )}
+      </form>
 
       {error && (
         <p className="runs-error" role="alert">
@@ -313,9 +359,9 @@ export function AgentRuns({
         <p className="runs-empty">
           {stats.total === 0
             ? "去任务中心把一条任务派给 Agent，执行完这里就有记录。"
-            : agentSlug !== "all"
-              ? "这个 Agent 在当前筛选下没有记录。"
-              : "这个筛选下没有记录。"}
+            : hasFilter
+              ? "当前筛选下没有记录。换个关键词，或点「清除」看全部。"
+              : "这一页没有记录。"}
         </p>
       ) : (
         <ul className="runs-list">
@@ -442,10 +488,36 @@ export function AgentRuns({
         </ul>
       )}
 
-      {shown.length > 0 && stats.total > shown.length && (
-        <p className="runs-foot">
-          只列出最近 {shown.length} 次；上面的统计按全部 {stats.total} 次计算。
-        </p>
+      {pageInfo.totalPages > 1 && (
+        <nav className="runs-pager" aria-label="执行记录翻页">
+          <span className="runs-pager-meta">
+            第 {pageInfo.page} / {pageInfo.totalPages} 页 · 共 {pageInfo.total} 条
+            {hasFilter ? `（已筛选，全部 ${stats.total} 条）` : ""}
+          </span>
+          <div className="runs-pager-links">
+            {pageInfo.page > 1 && (
+              <Link href={hrefWith({ page: pageInfo.page - 1 })} scroll={false}>
+                上一页
+              </Link>
+            )}
+            {pageWindow.map((n) => (
+              <Link
+                key={n}
+                href={hrefWith({ page: n })}
+                aria-current={n === pageInfo.page ? "page" : undefined}
+                className={n === pageInfo.page ? "is-current" : ""}
+                scroll={false}
+              >
+                {n}
+              </Link>
+            ))}
+            {pageInfo.page < pageInfo.totalPages && (
+              <Link href={hrefWith({ page: pageInfo.page + 1 })} scroll={false}>
+                下一页
+              </Link>
+            )}
+          </div>
+        </nav>
       )}
     </div>
   );

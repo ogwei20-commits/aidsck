@@ -2,6 +2,7 @@ import { desc } from "drizzle-orm";
 import { getDb } from "@/db";
 import { agentMessages } from "@/db/schema";
 import { formatDateTime } from "@/lib/utils/format";
+import { humanizeDbError } from "@/lib/errors/humanize";
 import { getProviderStatus } from "@/server/ai/providers";
 import { AGENT_REGISTRY } from "@/server/ai/agents/registry";
 import { listProjects } from "@/server/services/workspace";
@@ -21,7 +22,7 @@ export async function AssistantWorkspace({ userId }: { userId: string }) {
     history = (await db.select().from(agentMessages).orderBy(desc(agentMessages.createdAt)).limit(12)) as HistoryRow[];
     projectOptions = (await listProjects(userId, 50)).map((p) => ({ value: p.id, label: p.name }));
   } catch (error) {
-    dbError = error instanceof Error ? error.message : "数据库读取失败";
+    dbError = humanizeDbError(error);
   }
 
   return (
@@ -55,7 +56,7 @@ export async function AssistantWorkspace({ userId }: { userId: string }) {
 
       {dbError && (
         <div className="status-banner is-error">
-          <strong>数据库未连通。</strong> {dbError} 配置 .env.local 后执行 npm run db:migrate。
+          <strong>数据库未连通。</strong> {dbError} 修好后刷新本页。
         </div>
       )}
 

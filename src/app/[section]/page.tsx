@@ -8,14 +8,17 @@ import { LineageView } from "@/components/modules/lineage";
 import { FileUpload } from "@/components/modules/file-upload";
 import { FileTable } from "@/components/modules/file-table";
 import { ReportExport } from "@/components/modules/report-export";
+import { CitationPanel } from "@/components/modules/citation-panel";
 import { WorkflowCenter } from "@/components/modules/workflow-center";
 import { AgentRuns } from "@/components/modules/agent-runs";
 import { MilestoneBoard } from "@/components/modules/milestone-board";
 import { getEnv } from "@/lib/config/env";
+import { humanizeDbError } from "@/lib/errors/humanize";
 import { getModule } from "@/modules/registry";
 import { listRowsPaged, refOptions, type PagedRows, type Row } from "@/modules/store";
 import { getWorkflowRun, listWorkflowsWithRuns } from "@/server/ai/workflows/engine";
 import { listRunCenter, type RunCenter } from "@/server/services/agent-runs";
+import { listCitations, listReportOptions, type CitationView, type ReportOption } from "@/server/services/citations";
 import { listMilestones, type MilestoneGroup } from "@/server/services/milestones";
 
 export const dynamic = "force-dynamic";
@@ -45,12 +48,24 @@ export default async function SectionPage({ params, searchParams }: Ctx) {
   if (section === "runs") {
     // 执行记录单独成页：它是「看 Agent 干了什么」的地方，
     // 和管理 Agent（注册、权限、启停）是两件事，塞在一起两边都做不好。
+    // 筛选与分页都在服务端：客户端筛只能筛当前页，条数会越翻越对不上。
     let center: RunCenter | null = null;
     let error: string | null = null;
+
+    const modeParam = single(sp.mode);
+    const statusParam = single(sp.status);
+    const runQuery = {
+      q: single(sp.q).slice(0, 100),
+      mode: ["all", "framework", "mock", "model", "none"].includes(modeParam) ? modeParam : "all",
+      status: ["all", "succeeded", "failed", "running"].includes(statusParam) ? statusParam : "all",
+      agent: single(sp.agent).slice(0, 60),
+    };
+    const runPage = Number(single(sp.page)) || 1;
+
     try {
-      center = await listRunCenter(userId);
+      center = await listRunCenter(userId, { ...runQuery, page: runPage, pageSize: 20 });
     } catch (e) {
-      error = e instanceof Error ? e.message : "执行记录读取失败";
+      error = humanizeDbError(e);
     }
 
     return (
@@ -80,7 +95,19 @@ export default async function SectionPage({ params, searchParams }: Ctx) {
 
         {center && (
           <section className="section is-loose">
-            <AgentRuns runs={center.runs} stats={center.stats} currentMode={center.currentMode} />
+            <AgentRuns
+              runs={center.runs}
+              stats={center.stats}
+              currentMode={center.currentMode}
+              query={center.query}
+              pageInfo={{
+                page: center.page,
+                pageSize: center.pageSize,
+                totalPages: center.totalPages,
+                total: center.filteredTotal,
+              }}
+              agents={center.agents}
+            />
           </section>
         )}
       </>
@@ -129,7 +156,7 @@ export default async function SectionPage({ params, searchParams }: Ctx) {
     paged = await listRowsPaged(def, userId, { q, page: pageNo, pageSize: PAGE_SIZE });
     rows = paged.rows;
   } catch (error) {
-    dbError = error instanceof Error ? error.message : "数据库读取失败";
+    dbError = humanizeDbError(error);
   }
 
   const refs: RefMap = {};
@@ -148,7 +175,18 @@ export default async function SectionPage({ params, searchParams }: Ctx) {
     try {
       milestones = await listMilestones(userId);
     } catch (error) {
-      dbError = dbError ?? (error instanceof Error ? error.message : "里程碑读取失败");
+      dbError = dbError ?? humanizeDbError(error);
+    }
+  }
+
+  // 证据关联只属于报告页。同样单独 try：来源读不到不应连报告列表一起打不开
+  let citationItems: CitationView[] = [];
+  let citationReports: ReportOption[] = [];
+  if (def.slug === "reports") {
+    try {
+      [citationItems, citationReports] = await Promise.all([listCitations(userId), listReportOptions(userId)]);
+    } catch (error) {
+      dbError = dbError ?? humanizeDbError(error);
     }
   }
 
@@ -182,7 +220,7 @@ export default async function SectionPage({ params, searchParams }: Ctx) {
 
       {dbError && (
         <div className="status-banner is-error">
-          <strong>数据库未连通。</strong> {dbError} 请按 README 配置 .env.local 并执行 npm run db:migrate。
+          <strong>数据库未连通。</strong> {dbError} 修好后刷新本页。
         </div>
       )}
 
@@ -262,6 +300,17 @@ export default async function SectionPage({ params, searchParams }: Ctx) {
             <p>导出即成品：正文原样带出，末尾附来源清单与数据类型说明</p>
           </div>
           <ReportExport rows={rows} />
+        </section>
+      )}
+
+      {/* 报告页的来源登记：结论要有出处，导出附录才有内容可带 */}
+      {def.slug === "reports" && (
+        <section className="section">
+          <div className="section-head">
+            <h2><span className="section-index">04 /</span>来源</h2>
+            <p>给结论挂出处：标题、链接、原文摘录与数据类型，导出时自动进附录</p>
+          </div>
+          <CitationPanel citations={citationItems} reports={citationReports} />
         </section>
       )}
     </>

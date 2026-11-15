@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { getDb } from "@/db";
 import { agentMessages, agentRuns, agents, tasks } from "@/db/schema";
 import { AppError } from "@/lib/errors/api";
@@ -96,9 +96,49 @@ export interface RunCenter {
   runs: RunSummary[];
   /** 当前实际模式，用于页面顶部说明「你现在看到的是什么」 */
   currentMode: string;
+  /** 当前筛选命中的总数；无筛选时等于 stats.total */
+  filteredTotal: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  query: RunQuery;
+  /** 全量出现过的 Agent，供筛选下拉使用（不受当前页影响） */
+  agents: { slug: string; name: string; count: number }[];
 }
 
-type RunRow = Omit<RunSummary, "mode" | "attemptNo"> & { provider: string };
+/**
+ * 筛选条件。
+ *
+ * 为什么筛选放服务端：执行记录会随使用一直增长，
+ * 客户端筛选只能筛「已经取回来的 50 条」，数字对不上，翻页还会漏。
+ */
+export interface RunQuery {
+  q: string;
+  /** all / framework / mock / model / none */
+  mode: string;
+  /** all / succeeded / failed / running */
+  status: string;
+  /** Agent slug，空串表示全部 */
+  agent: string;
+}
+
+export const EMPTY_RUN_QUERY: RunQuery = { q: "", mode: "all", status: "all", agent: "" };
+
+export interface RunCenterOptions extends Partial<RunQuery> {
+  page?: number;
+  pageSize?: number;
+}
+
+/**
+ * LIKE 通配符转义。
+ * 不转义的话，搜 `%` 会命中全部记录、搜 `_` 会变成任意单字符——
+ * 用户看到的是「搜了但结果不对」，排查起来非常费时间。
+ */
+function likeEscape(value: string): string {
+  return value.replace(/[\\%_]/g, (m) => `\\${m}`);
+}
+
+type RunRow = Omit<RunSummary, "mode"> & { provider: string };
 
 const OUTPUT_PREVIEW_CHARS = 160;
 
@@ -118,8 +158,17 @@ function iso(value: Date | string | null): string | null {
  * 统计走一次聚合，明细走一次联查；两者分开算，避免「明细只取 50 条、
  * 统计却按 50 条算」这种把总数说小的问题。
  */
-export async function listRunCenter(userId: string, limit = 50): Promise<RunCenter> {
+export async function listRunCenter(userId: string, options: RunCenterOptions = {}): Promise<RunCenter> {
   const db = getDb();
+
+  const query: RunQuery = {
+    q: (options.q ?? "").trim().slice(0, 100),
+    mode: options.mode ?? "all",
+    status: options.status ?? "all",
+    agent: options.agent ?? "",
+  };
+  const pageSize = Math.min(Math.max(options.pageSize ?? 20, 1), 100);
+  const requestedPage = Math.max(options.page ?? 1, 1);
 
   const [agg] = await db
     .select({
@@ -145,6 +194,51 @@ export async function listRunCenter(userId: string, limit = 50): Promise<RunCent
     })
     .from(agentRuns)
     .where(eq(agentRuns.userId, userId));
+
+  // ── 筛选条件 ────────────────────────────────────────────
+  const conds: SQL[] = [eq(agentRuns.userId, userId)];
+
+  if (query.q) {
+    const like = `%${likeEscape(query.q)}%`;
+    // 搜任务标题、Agent 名、失败原因。不搜产出正文：那要扫 agent_messages 全表，
+    // 在这个阶段换来的收益不如「按任务定位」直接。
+    const textCond = or(ilike(tasks.title, like), ilike(agents.name, like), ilike(agentRuns.error, like));
+    if (textCond) conds.push(textCond);
+  }
+
+  if (query.status === "succeeded") conds.push(eq(agentRuns.status, "succeeded"));
+  else if (query.status === "failed") conds.push(eq(agentRuns.status, "failed"));
+  else if (query.status === "running") conds.push(sql`${agentRuns.status} in ('running', 'queued')`);
+
+  if (query.mode === "framework") {
+    conds.push(eq(agentRuns.provider, "none"), eq(agentRuns.status, "succeeded"));
+  } else if (query.mode === "mock") {
+    conds.push(eq(agentRuns.provider, "mock"), eq(agentRuns.status, "succeeded"));
+  } else if (query.mode === "model") {
+    conds.push(sql`${agentRuns.provider} not in ('none', 'mock')`, eq(agentRuns.status, "succeeded"));
+  } else if (query.mode === "none") {
+    // 「无产出」= 没成功。成功但没有 assistant 消息的记录在 executor 里不会出现，
+    // 真出现了也应该按异常去查，而不是混进「无产出」的分组。
+    conds.push(sql`${agentRuns.status} <> 'succeeded'`);
+  }
+
+  if (query.agent) conds.push(eq(agents.slug, query.agent));
+
+  const where = and(...conds);
+
+  // 数量要单独算：分页之后 rows.length 只是这一页的条数，
+  // 用它当总数会让「共 N 条」随着翻页变化。
+  const [countRow] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(agentRuns)
+    .leftJoin(agents, eq(agents.id, agentRuns.agentId))
+    .leftJoin(tasks, eq(tasks.id, agentRuns.taskId))
+    .where(where);
+
+  const filteredTotal = Number(countRow?.n ?? 0);
+  const totalPages = Math.max(1, Math.ceil(filteredTotal / pageSize));
+  const page = Math.min(requestedPage, totalPages);
+  const offset = (page - 1) * pageSize;
 
   const rows = (await db
     .select({
@@ -176,24 +270,36 @@ export async function listRunCenter(userId: string, limit = 50): Promise<RunCent
       >`(select left(m.content, ${OUTPUT_PREVIEW_CHARS}) from agent_messages m
          where m.run_id = ${agentRuns.id} and m.role = 'assistant'
          order by m.created_at desc limit 1)`,
+      /**
+       * 「该任务第几次执行」必须全局算，不能按当前页的行号数。
+       * 分页后同一任务的前几次可能在上一页，按页内序号会从 1 重新开始。
+       */
+      attemptNo: sql<number>`case when ${agentRuns.taskId} is null then 1 else (
+        select count(*)::int from agent_runs r2
+        where r2.task_id = ${agentRuns.taskId} and r2.created_at <= ${agentRuns.createdAt}
+      ) end`,
     })
     .from(agentRuns)
     .leftJoin(agents, eq(agents.id, agentRuns.agentId))
     .leftJoin(tasks, eq(tasks.id, agentRuns.taskId))
-    .where(eq(agentRuns.userId, userId))
+    .where(where)
     .orderBy(desc(agentRuns.createdAt))
-    .limit(Math.min(Math.max(limit, 1), 200))) as RunRow[];
+    .limit(pageSize)
+    .offset(offset)) as RunRow[];
 
-  // 「该任务第几次执行」：按时间正序数，再倒序展示。
-  // 不能直接用行号——列表是倒序取的，行号会变成「从最近往前数」。
-  const seq = new Map<string, number>();
-  const attempt = new Map<string, number>();
-  for (const row of [...rows].reverse()) {
-    const key = row.taskId ?? `run:${row.id}`;
-    const n = (seq.get(key) ?? 0) + 1;
-    seq.set(key, n);
-    attempt.set(row.id, n);
-  }
+  // Agent 筛选下拉：从全量记录里取，不受当前页与当前筛选影响，
+  // 否则筛过一次之后就再也选不到别的 Agent 了。
+  const agentRows = await db
+    .select({
+      slug: sql<string>`coalesce(${agents.slug}, '')`,
+      name: sql<string>`coalesce(${agents.name}, '已删除的 Agent')`,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(agentRuns)
+    .leftJoin(agents, eq(agents.id, agentRuns.agentId))
+    .where(eq(agentRuns.userId, userId))
+    .groupBy(agents.slug, agents.name)
+    .orderBy(sql`count(*) desc`);
 
   return {
     stats: {
@@ -216,9 +322,17 @@ export async function listRunCenter(userId: string, limit = 50): Promise<RunCent
       outputTokens: num(row.outputTokens),
       outputChars: num(row.outputChars),
       mode: modeOf(row.provider, num(row.outputChars) > 0),
-      attemptNo: attempt.get(row.id) ?? 1,
+      attemptNo: num(row.attemptNo) || 1,
     })),
     currentMode: process.env.AI_PROVIDER ?? "none",
+    filteredTotal,
+    page,
+    pageSize,
+    totalPages,
+    query,
+    agents: agentRows
+      .filter((a) => a.slug !== "")
+      .map((a) => ({ slug: a.slug, name: a.name, count: num(a.count) })),
   };
 }
 
@@ -307,7 +421,9 @@ export interface RunMessage {
   role: string;
   content: string;
   createdAt: string;
-}export interface RunDetail extends RunSummary {
+}
+
+export interface RunDetail extends RunSummary {
   messages: RunMessage[];
   /** 这次执行写进任务的日志，便于对照「执行时看到了什么」 */
   agentDescription: string | null;

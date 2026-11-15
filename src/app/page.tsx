@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { HomeComposer } from "@/components/dashboard/home-composer";
 import { RecentRuns } from "@/components/dashboard/recent-runs";
+import { humanizeDbError } from "@/lib/errors/humanize";
 import { getEnv } from "@/lib/config/env";
 import { formatDateTime } from "@/lib/utils/format";
 import { getProviderStatus } from "@/server/ai/providers";
@@ -35,7 +36,7 @@ export default async function Home() {
     runCounts = await getAgentRunCounts();
     recentRuns = await listRecentRuns(userId, 4);
   } catch (error) {
-    dbError = error instanceof Error ? error.message : "数据库连接失败";
+    dbError = humanizeDbError(error);
   }
 
   const openTasks = (data?.tasks ?? []).filter((t) => t.status === "pending" || t.status === "running").slice(0, 6);

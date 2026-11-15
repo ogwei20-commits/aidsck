@@ -1,6 +1,7 @@
 import { countRows } from "@/modules/store";
 import { MODULES } from "@/modules/registry";
 import { listAuditLogs } from "@/server/services/workspace";
+import { humanizeDbError } from "@/lib/errors/humanize";
 import { formatDateTime } from "@/lib/utils/format";
 
 const DATA_TYPES = [
@@ -27,7 +28,7 @@ export async function LineageView({ userId }: { userId: string }) {
     );
     logs = await listAuditLogs(200);
   } catch (error) {
-    dbError = error instanceof Error ? error.message : "数据库读取失败";
+    dbError = humanizeDbError(error);
   }
 
   const total = counts.reduce((sum, c) => sum + c.n, 0);

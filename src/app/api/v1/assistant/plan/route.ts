@@ -3,6 +3,7 @@ import { agentMessages, tasks } from "@/db/schema";
 import { getEnv } from "@/lib/config/env";
 import { AppError, fail, ok, readJson } from "@/lib/errors/api";
 import { getProviderStatus } from "@/server/ai/providers";
+import { dispatchPlan } from "@/server/ai/orchestrator/dispatcher";
 import { planTarget } from "@/server/ai/orchestrator/planner";
 import { writeAudit } from "@/server/audit/logger";
 
@@ -16,14 +17,22 @@ export async function GET() {
 /**
  * 把一句目标拆成任务并真实写库。
  *
- * 当前是规则模板拆解（不是模型推理），因此响应里 mode 固定为 rule-template，
+ * `dispatch: true` 时继续做第二步：把有 Agent 的任务真的派出去执行，
+ * 返回每条任务的执行结果。这是 PRD US-07「自动拆解并调度」的实现。
+ *
+ * 当前拆解是规则模板（不是模型推理），因此响应里 mode 固定为 rule-template，
  * 前端必须据此标注来源，避免被当成 AI 输出。
  */
 export async function POST(request: Request) {
   try {
     const userId = getEnv().APP_USER_ID;
-    const body = (await readJson(request)) as { target?: unknown; projectId?: unknown };
+    const body = (await readJson(request)) as {
+      target?: unknown;
+      projectId?: unknown;
+      dispatch?: unknown;
+    };
     const target = String(body.target ?? "").trim();
+    const shouldDispatch = body.dispatch === true;
 
     if (target.length < 4) {
       throw new AppError("VALIDATION_FAILED", "请把目标写具体一点，至少 4 个字", 422, {
@@ -54,15 +63,21 @@ export async function POST(request: Request) {
       )
       .returning({ id: tasks.id, title: tasks.title });
 
+    const dispatch = shouldDispatch ? await dispatchPlan(userId, plan.steps, inserted) : null;
+
     await db.insert(agentMessages).values([
       { conversationId: null, agentId: null, role: "user", content: target },
       {
         conversationId: null,
         agentId: null,
         role: "assistant",
-        content: `[规则模板拆解 · 非模型输出] 拆出 ${plan.steps.length} 个任务：${plan.steps
-          .map((s) => s.title)
-          .join("；")}`,
+        content:
+          `[规则模板拆解 · 非模型输出] 拆出 ${plan.steps.length} 个任务：${plan.steps
+            .map((s) => s.title)
+            .join("；")}` +
+          (dispatch
+            ? `；已派发 ${dispatch.succeeded + dispatch.failed} 条，成功 ${dispatch.succeeded} 条、失败 ${dispatch.failed} 条、需人工 ${dispatch.skipped} 条。`
+            : "。任务已创建，尚未派发。"),
       },
     ]);
 
@@ -72,10 +87,15 @@ export async function POST(request: Request) {
       entityType: "assistant",
       entityId: null,
       permissionLevel: "L2",
-      detail: { target, steps: plan.steps.length, mode: plan.mode },
+      detail: {
+        target,
+        steps: plan.steps.length,
+        mode: plan.mode,
+        dispatched: dispatch ? { succeeded: dispatch.succeeded, failed: dispatch.failed, skipped: dispatch.skipped } : null,
+      },
     });
 
-    return ok({ plan, created: inserted }, 201);
+    return ok({ plan, created: inserted, dispatch }, 201);
   } catch (error) {
     return fail(error);
   }
